@@ -1,0 +1,48 @@
+{
+  "name": "gia-pha-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "@ant-design/icons": "^6.0.0",
+    "@ant-design/pro-layout": "^7.22.4",
+    "@ant-design/v5-patch-for-react-19": "^1.0.0",
+    "antd": "^5.24.9",
+    "axios": "^1.9.0",
+    "dayjs": "^1.11.13",
+    "file-saver": "^2.0.5",
+    "moment": "^2.30.1",
+    "papaparse": "^5.5.3",
+    "react-color": "^2.19.3",
+    "react-router-dom": "^7.8.0",
+    "recoil": "^0.7.7",
+    "styled-components": "^6.1.19",
+    "zustand": "^5.0.4",
+    "xlsx-populate": "^1.21.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/file-saver": "^2.0.7",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "^19.0.10",
+    "@types/react-color": "^3.0.13",
+    "@types/react-dom": "^19.0.4",
+    "@types/socket.io-client": "^3.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.22.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.26.1",
+    "vite": "^6.3.1"
+  }
+}

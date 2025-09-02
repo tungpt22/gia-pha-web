@@ -1,0 +1,123 @@
+.mg-wrap {
+  position: relative;
+  display: inline-block;
+}
+.mg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.mg-btn:hover {
+  color: #fde68a;
+}
+
+/* Menu card — unified with cards on site */
+.mg-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  transform-origin: 12px top;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  min-width: 260px;
+  padding: 8px;
+  margin-top: 8px;
+  z-index: 100;
+  transform: scale(0.98);
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.14s ease;
+}
+.mg-menu.open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Caret / arrow */
+.mg-menu::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 16px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+  transform: rotate(45deg);
+}
+
+/* Right align option */
+.mg-menu.align-right {
+  right: 0;
+  left: auto;
+  transform-origin: calc(100% - 12px) top;
+}
+.mg-menu.align-right::before {
+  left: auto;
+  right: 16px;
+}
+
+/* Items */
+.mg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #1f2937;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.mg-item:hover {
+  background: #f8fafc;
+}
+.mg-sep {
+  height: 1px;
+  background: #eef2f7;
+  margin: 6px 0;
+}
+
+/* Mobile (inverse tone inside red drawer) */
+@media (max-width: 767px) {
+  .mg-wrap {
+    display: block;
+    margin: 6px 0;
+  }
+  .mg-menu {
+    position: static;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+    margin: 6px 0 0 0;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mg-menu::before {
+    display: none;
+  }
+  .mg-item {
+    color: #fff;
+  }
+  .mg-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .mg-sep {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}

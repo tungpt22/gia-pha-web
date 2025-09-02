@@ -1,0 +1,140 @@
+:root {
+  --brand: #8b0e0e;
+  --brand-dark: #6d0b0b;
+  --brand-light: #b11a1a;
+  --beige: #f3e4c2;
+  --beige-soft: #f8ecd7;
+  --text: #1f2937;
+  --muted: #4b5563;
+  --radius: 14px;
+  --container: 1180px;
+  --nav-h: 56px;
+  --h1-mobile: 40px;
+  --h1-desktop: 56px;
+  --h1-weight: 800;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: Inter, system-ui, Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background: #fff;
+}
+.container {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+a {
+  text-decoration: none;
+  color: inherit;
+}
+img {
+  display: block;
+  max-width: 100%;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+  border: 1px solid #bb850b;
+}
+.btn-primary:hover {
+  background: var(--brand-light);
+}
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--brand);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.btn-ghost:hover {
+  background: #fff;
+}
+.section {
+  padding: 56px 0;
+}
+.section--beige {
+  background: var(--beige);
+}
+.section--brand {
+  background: var(--brand);
+  color: #fff;
+}
+.grid {
+  display: grid;
+  gap: 18px;
+}
+@media (min-width: 768px) {
+  .grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.upper {
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.shadow-card {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+.button {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.button--primary {
+  background: var(--brand, #990c0c);
+  background-color: #990c0c;
+  color: #fff;
+  border: 2px solid #bb850b;
+}
+
+.fields {
+  margin: 0 auto;
+  width: 100%;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.field label {
+  width: 100px;
+  font-weight: 700;
+  font-size: 14px;
+  text-align: right;
+  margin-right: 12px;
+}
+
+.field input {
+  height: 36px;
+  width: 50%;
+  padding: 0 10px;
+  border: 1px solid #990c0c !important;
+  border-radius: 8px;
+}

@@ -1,0 +1,46 @@
+.tabs {
+  display: flex;
+  gap: 10px;
+}
+.tab {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  color: #fff;
+  background: transparent;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 800;
+}
+.tab.active {
+  background: #fff;
+  color: var(--brand);
+}
+.tabwrap {
+  margin-top: 18px;
+}
+.card {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.card img {
+  width: 100%;
+  display: block;
+}
+.video {
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.grid2 {
+  display: grid;
+  gap: 18px;
+}
+@media (min-width: 992px) {
+  .grid2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

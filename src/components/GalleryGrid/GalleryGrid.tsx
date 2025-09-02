@@ -1,4 +1,3 @@
-import React from "react";
 import "./GalleryGrid.css";
 export default function GalleryGrid({
   images,

@@ -115,12 +115,9 @@
   margin-top: 8px;
 }
 
-.button {
-  height: 45px !important;
-}
-
 .button--primary {
   width: 40%;
+  height: 45px !important;
 }
 
 .forgotPassword {

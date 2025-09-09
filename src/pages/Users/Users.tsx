@@ -735,9 +735,9 @@ export default function Users() {
             </button>
           </div>
         </div>
-
+        <div className="count">Tìm thấy {total} kết quả</div>
         <div className="thead">Kết quả tìm kiếm</div>
-        <div className="count">Tổng: {total} kết quả</div>
+
         {isEmpty && keyword.trim() !== "" && (
           <div className="search-empty-banner">Không tìm thấy kết quả</div>
         )}
@@ -746,7 +746,7 @@ export default function Users() {
           {/* HEADER có nút mũi tên sắp xếp */}
           {!isEmpty && (
             <div
-              className="tr tr--head"
+              className="users-tr tr--head"
               role="presentation"
               onClick={(e) => e.stopPropagation()}
             >
@@ -860,7 +860,7 @@ export default function Users() {
           {paginated.map((u) => (
             <div
               key={u.id}
-              className="tr"
+              className="users-tr"
               role="listitem"
               onClick={() => {
                 setPicked(u);
@@ -907,7 +907,7 @@ export default function Users() {
         </div>
 
         {/* PHÂN TRANG */}
-        {!isEmpty && totalPages > 1 && (
+        {!isEmpty && (
           <div className="pagination">
             <button
               className="page-btn"

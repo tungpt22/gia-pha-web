@@ -27,6 +27,8 @@
   font-size: 13px;
   font-weight: 700;
   text-align: center;
+  background-color: #8b0e0e;
+  color: #fff;
 }
 .menu a.active,
 .menu a:hover {

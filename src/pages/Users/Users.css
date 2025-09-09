@@ -29,6 +29,7 @@
   content: "";
   display: block;
   height: 3px;
+  width: auto;
   margin-top: 6px;
   border-radius: 999px;
   background: linear-gradient(90deg, #bb850b, #990c0c);
@@ -129,7 +130,7 @@
   gap: 8px;
 }
 
-.tr {
+.users-tr {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -142,18 +143,18 @@
 }
 
 @media (max-width: 1200px) {
-  .tr {
+  .users-tr {
     grid-template-columns: 2fr 100px 140px 150px 2.2fr 150px;
   }
 }
 
 @media (max-width: 840px) {
-  .tr {
+  .users-tr {
     grid-template-columns: 1fr;
   }
 }
 
-.tr--head {
+.users-tr--head {
   background: #f9fafb;
   font-weight: 800;
   cursor: default;

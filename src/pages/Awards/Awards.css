@@ -46,12 +46,12 @@
   border-collapse: separate;
   border-spacing: 0 8px;
 }
-.tr {
+.awards-tr {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 120px;
+  grid-template-columns: 1fr 1.5fr 1fr 1fr 1fr 120px;
   align-items: center;
   padding: 10px 12px;
   gap: 10px;

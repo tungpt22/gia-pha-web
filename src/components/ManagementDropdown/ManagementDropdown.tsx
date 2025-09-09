@@ -37,7 +37,7 @@ export default function ManagementDropdown({ alignRight = false }: Props) {
         </svg>
       </button>
       <div className={menuClass} role="menu">
-        <div className="mg-sep" />
+        {/* <div className="mg-sep" /> */}
         <a className="mg-item" href="/admin/users" role="menuitem">
           Quản lý người dùng
         </a>

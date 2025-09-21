@@ -293,10 +293,10 @@
   justify-content: flex-start;
 }
 
-/* ====== HOẠT ĐỘNG (header căn thẳng mép input) ====== */
+/* ====== HOẠT ĐỘNG (header 6 cột: bắt đầu/kết thúc/chức vụ/khen thưởng/mô tả/xoá) ====== */
 .list-plain .row {
   display: grid;
-  grid-template-columns: 140px 160px 1fr 40px; /* Hoạt động | Thời gian | Mô tả | Xóa */
+  grid-template-columns: 160px 160px 200px 200px 1fr 40px;
   gap: 8px;
   align-items: center;
 }
@@ -310,6 +310,11 @@
   text-align: left;
   padding: 0;
   color: #374151;
+}
+
+/* Date cell (input + clear) */
+.date-cell {
+  position: relative;
 }
 
 /* ====== MODAL ====== */

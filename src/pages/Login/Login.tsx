@@ -1,73 +1,58 @@
-import React, { useEffect } from "react";
+// src/pages/Login.tsx
+import React, { useEffect, useState } from "react";
 import "./Login.css";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
-type AuthUser = {
-  id: string;
-  name: string;
-  role?: string;
-  gender?: string;
-  email?: string;
-  phone_number?: string;
-  address?: string;
-  birthday?: string | null;
-  death_day?: string | null;
-  profile_img?: string | null;
-};
-type AuthState = { token: string; user: AuthUser };
-
 export default function Login() {
-  const [phone, setPhone] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [show, setShow] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
+  const { token, login } = useAuth();
   const navigate = useNavigate();
-  const { auth, setAuth } = useAuth();
+  const location = useLocation();
 
-  // Nếu đã login thì không cho vào trang /login
+  // Nếu đã đăng nhập -> về Home (không auto-login)
   useEffect(() => {
-    if (auth) {
-      navigate("/");
+    if (token) navigate("/", { replace: true });
+  }, [token, navigate]);
+
+  // Tự điền nếu có lưu
+  useEffect(() => {
+    const savedPhone = localStorage.getItem("savedPhone");
+    const savedPassword = localStorage.getItem("savedPassword");
+    if (savedPhone && savedPassword) {
+      setPhone(savedPhone);
+      setPassword(savedPassword);
+      setRemember(true);
     }
-  }, [auth, navigate]);
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
-      const res = await fetch("http://localhost:3000/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone_number: phone,
-          password: password,
-        }),
-      });
+      // ✅ Gọi login đúng chữ ký: (phone_number, password)
+      await login(phone.trim(), password);
 
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.message || "Đăng nhập thất bại");
+      // Lưu ghi nhớ nếu cần
+      if (remember) {
+        localStorage.setItem("savedPhone", phone.trim());
+        localStorage.setItem("savedPassword", password);
+      } else {
+        localStorage.removeItem("savedPhone");
+        localStorage.removeItem("savedPassword");
       }
 
-      const token: string | undefined = json?.data?.access_token;
-      const user: AuthUser | undefined = json?.data?.user;
-
-      if (!token || !user) {
-        throw new Error("Thiếu dữ liệu trả về từ server");
-      }
-
-      const newAuth: AuthState = { token, user };
-      localStorage.setItem("auth", JSON.stringify(newAuth));
-      setAuth(newAuth); // cập nhật context
-      navigate("/"); // quay về trang chủ
+      const next = (location.state as any)?.from?.pathname || "/users";
+      navigate(next, { replace: true });
     } catch (err: any) {
-      setError(err?.message || "Có lỗi xảy ra");
+      setError(err?.message || "Đăng nhập thất bại");
     } finally {
       setLoading(false);
     }
@@ -80,7 +65,6 @@ export default function Login() {
           <h2 style={{ marginTop: 0, textAlign: "center", color: "#8B0000" }}>
             Đăng nhập
           </h2>
-
           <form className="form" onSubmit={onSubmit}>
             <div className="fields">
               <div className="field">
@@ -91,7 +75,6 @@ export default function Login() {
                   placeholder="Nhập số điện thoại"
                 />
               </div>
-
               <div className="field">
                 <label>Mật khẩu</label>
                 <input
@@ -107,6 +90,17 @@ export default function Login() {
                 >
                   {show ? "Ẩn" : "Hiện"}
                 </button>
+              </div>
+              <div className="savePass-checkbox-field">
+                <input
+                  type="checkbox"
+                  id="chk-remember"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                <label id="lb-remember" htmlFor="chk-remember">
+                  Lưu mật khẩu
+                </label>
               </div>
             </div>
 

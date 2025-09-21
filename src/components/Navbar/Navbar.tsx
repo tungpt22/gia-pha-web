@@ -1,137 +1,226 @@
+// src/components/Navbar.tsx
 import React from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import "./Navbar.css";
-import ManagementDropdown from "../ManagementDropdown/ManagementDropdown";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Navbar() {
+  const { token, user, logout } = useAuth();
   const navigate = useNavigate();
-  const { auth, setAuth } = useAuth();
+
   const [openMobile, setOpenMobile] = React.useState(false);
+  const [openQL, setOpenQL] = React.useState(false);
+  const [openUser, setOpenUser] = React.useState(false);
+  const adminRef = React.useRef<HTMLDivElement>(null);
+  const userRef = React.useRef<HTMLDivElement>(null);
 
-  const loggedIn = !!auth?.token;
-  const user = auth?.user;
+  // đóng dropdown khi click ra ngoài/ESC
+  React.useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (adminRef.current && !adminRef.current.contains(e.target as Node))
+        setOpenQL(false);
+      if (userRef.current && !userRef.current.contains(e.target as Node))
+        setOpenUser(false);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpenQL(false);
+        setOpenUser(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, []);
 
-  const Item = (to: string, label: string) => (
+  const item = (to: string, label: string, end = false) => (
     <NavLink
       to={to}
+      end={end}
       onClick={() => setOpenMobile(false)}
-      className={({ isActive }) => (isActive ? "active " : "") + " upper"}
+      className={({ isActive }) =>
+        "navbar__link upper" + (isActive ? " active" : "")
+      }
     >
       {label}
     </NavLink>
   );
 
-  const handleLogout = () => {
-    localStorage.removeItem("auth");
-    setAuth(null);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {}
+    setOpenUser(false);
     setOpenMobile(false);
-    navigate("/");
+    navigate("/", { replace: true });
   };
 
-  const togglePulldown = (btn: HTMLButtonElement) => {
-    const menu = btn.parentElement?.querySelector(".pulldown");
-    menu?.classList.toggle("open");
-  };
+  const logged = !!token;
 
   return (
-    <header className="nav">
-      <div className="container row">
-        <nav className="menu">
-          {Item("/", "TRANG CHỦ")}
-          {Item("/cay-pha-he", "CÂY PHẢ HỆ")}
-          {Item("/thanh-vien", "THÀNH VIÊN")}
-          {Item("/bang-vang", "BẢNG VÀNG")}
-          {Item("/su-kien", "SỰ KIỆN")}
-          {Item("/thu-vien-anh", "THƯ VIỆN ẢNH")}
-          {Item("/quy", "QUỸ")}
+    <header className="navbar">
+      <div className="container navbar__inner">
+        <button
+          className="navbar__toggle"
+          aria-label="Mở menu"
+          onClick={() => setOpenMobile((v) => !v)}
+        >
+          ☰
+        </button>
 
-          {/* Chỉ hiển thị dropdown Quản lý khi đã đăng nhập */}
-          {loggedIn && <ManagementDropdown />}
+        <nav className={"navbar__menu" + (openMobile ? " open" : "")}>
+          {item("/", "TRANG CHỦ", true)}
+          {item("/cay-pha-he", "CÂY PHẢ HỆ")}
+          {item("/thanh-vien", "THÀNH VIÊN")}
+          {item("/bang-vang", "BẢNG VÀNG")}
+          {item("/su-kien", "SỰ KIỆN")}
+          {item("/thu-vien-anh", "THƯ VIỆN ẢNH")}
+          {item("/quy", "QUỸ")}
 
-          <div className="nav-right">
-            {!loggedIn ? (
-              Item("/login", "Đăng Nhập")
-            ) : (
-              <div className="userArea">
-                <span className="hello">Xin chào {user?.name || "Bạn"}</span>
-                <button
-                  className="avatarBtn"
-                  aria-haspopup="menu"
-                  aria-label="Tài khoản"
-                  onClick={(e) => togglePulldown(e.currentTarget)}
+          {logged && (
+            <div
+              ref={adminRef}
+              className={"dropdown" + (openQL ? " open" : "")}
+            >
+              <button
+                type="button"
+                className="navbar__link"
+                aria-haspopup="menu"
+                aria-expanded={openQL}
+                onClick={() => setOpenQL((v) => !v)}
+              >
+                QUẢN LÝ
+              </button>
+              <div className="dropdown-menu" role="menu">
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/users"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
                 >
-                  <img
-                    className="avatar"
-                    alt="avatar"
-                    src={
-                      user?.profile_img ||
-                      "https://ui-avatars.com/api/?name=" +
-                        encodeURIComponent(user?.name || "User")
-                    }
-                  />
+                  Quản lý người dùng
+                </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/events"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý sự kiện
+                </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/finance"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý thu chi
+                </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/awards"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý khen thưởng
+                </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/media"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý hình ảnh
+                </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/news"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý tin tức
+                </NavLink>
+              </div>
+            </div>
+          )}
+
+          <div className={"navbar__right" + (openMobile ? " show" : "")}>
+            {!logged ? (
+              <button
+                className="navbar__link"
+                type="button"
+                onClick={() => {
+                  setOpenMobile(false);
+                  navigate("/login");
+                }}
+              >
+                ĐĂNG NHẬP
+              </button>
+            ) : (
+              <div
+                ref={userRef}
+                className={"dropdown user-dd" + (openUser ? " open" : "")}
+              >
+                <button
+                  type="button"
+                  className="navbar__link"
+                  aria-haspopup="menu"
+                  aria-expanded={openUser}
+                  onClick={() => setOpenUser((v) => !v)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  {user?.profile_img ? (
+                    <img
+                      className="navbar__avatar"
+                      src={user.profile_img}
+                      alt="avatar"
+                    />
+                  ) : (
+                    <div className="navbar__avatar" />
+                  )}
+                  <span className="navbar__hello">
+                    Xin chào {user?.name || "Bạn"}
+                  </span>
                 </button>
-                <div className="pulldown" role="menu">
-                  <button
-                    className="pd-item"
-                    onClick={() => navigate("/profile")}
+
+                <div className="dropdown-menu" role="menu">
+                  <NavLink
+                    className="dropdown-item"
+                    to="/profile"
+                    onClick={() => {
+                      setOpenUser(false);
+                      setOpenMobile(false);
+                    }}
                   >
-                    Thay đổi thông tin
-                  </button>
-                  <button className="pd-item" onClick={handleLogout}>
-                    Thoát
-                  </button>
+                    Thông tin
+                  </NavLink>
+                  <a className="dropdown-item" onClick={handleLogout}>
+                    Đăng xuất
+                  </a>
                 </div>
               </div>
             )}
           </div>
         </nav>
-
-        <button
-          className="toggle"
-          aria-label="Menu"
-          onClick={() => setOpenMobile((v) => !v)}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 6h18v2H3V6Zm0 5h18v2H3v-2Zm0 5h18v2H3v-2Z" />
-          </svg>
-        </button>
       </div>
-
-      {openMobile && (
-        <div className="mobile">
-          <div className="container">
-            {Item("/", "TRANG CHỦ")}
-            {Item("/cay-pha-he", "CÂY PHẢ HỆ")}
-            {Item("/thanh-vien", "THÀNH VIÊN")}
-            {Item("/bang-vang", "BẢNG VÀNG")}
-            {Item("/su-kien", "SỰ KIỆN")}
-            {Item("/thu-vien-anh", "THƯ VIỆN ẢNH")}
-            {Item("/quy", "QUỸ")}
-            {loggedIn && (
-              <div style={{ margin: "8px 0" }}>
-                <ManagementDropdown />
-              </div>
-            )}
-            {!loggedIn ? (
-              Item("/login", "Đăng Nhập")
-            ) : (
-              <div className="userArea mobileUser">
-                <span className="hello">Xin chào {user?.name || "Bạn"}</span>
-                <button
-                  className="pd-item"
-                  onClick={() => navigate("/profile")}
-                >
-                  Thay đổi thông tin
-                </button>
-                <button className="pd-item" onClick={handleLogout}>
-                  Thoát
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </header>
   );
 }

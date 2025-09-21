@@ -1,10 +1,27 @@
 import * as React from "react";
-import "./Users.css";
+// ❌ bỏ import "./Users.css";
 
-/* ====== TYPES ====== */
-type Activity =
-  | { kind: "role"; time: string; desc: string }
-  | { kind: "event"; time: string; desc: string };
+import {
+  listUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  saveActivities,
+  saveRelationships,
+  setApiBase,
+  setAccessToken,
+  getAccessToken,
+  type ListResult,
+} from "../../api/usersApi";
+
+/* ========================== TYPES (UI) ========================== */
+export type ActivityItem = {
+  start_date?: string;
+  end_date?: string;
+  position?: string;
+  reward?: string;
+  description?: string;
+};
 
 type Role = "Admin" | "Biên tập" | "Thành viên";
 
@@ -15,63 +32,23 @@ export type User = {
   dob?: string;
   dod?: string;
   email?: string;
-  phone?: string;
+  phone?: string; // map từ backend.phone_number
   address?: string;
   role: Role;
   photoName?: string;
-  activities?: Activity[];
+  activities?: ActivityItem[];
   relationships?: {
-    father?: string; // giá trị lưu theo tên (dropdown hiển thị theo tên)
+    father?: string;
     mother?: string;
-    spouse?: string; // Vợ/Chồng tùy theo giới tính
+    spouse?: string;
     children?: string[];
   };
 };
 
-/* ====== MOCK DATA (có thể thay bằng API) ====== */
-const initialUsers: User[] = [
-  {
-    id: "u1",
-    name: "Nguyễn Văn A",
-    gender: "Nam",
-    dob: "1970-04-20",
-    phone: "0900000001",
-    address: "Hà Nội",
-    role: "Thành viên",
-    activities: [
-      { kind: "role", time: "1990-1995", desc: "Bí thư chi đoàn" },
-      { kind: "event", time: "2000", desc: "Tham gia hoạt động xã hội" },
-    ],
-    relationships: {
-      father: "Nguyễn Văn B",
-      mother: "Trần Thị C",
-      spouse: "Trần Thị D",
-      children: ["Nguyễn Văn E"],
-    },
-  },
-  {
-    id: "u2",
-    name: "Trần Thị Mai",
-    gender: "Nữ",
-    dob: "1985-01-10",
-    phone: "0900000002",
-    address: "TP.HCM",
-    role: "Biên tập",
-    activities: [{ kind: "role", time: "2010-2013", desc: "Tổ phó" }],
-    relationships: {
-      father: "Trần Văn X",
-      mother: "Ngô Thị Y",
-      spouse: "Phạm Văn Z",
-      children: ["Phạm Trần K", "Phạm Trần L"],
-    },
-  },
-];
-
-/* ====== TIỆN ÍCH NHỎ ====== */
+/* ======================== TIỆN ÍCH & SORT ======================= */
 function cx(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
-
 function buildPageList(total: number, current: number) {
   const pages: (number | string)[] = [];
   const window = 1;
@@ -91,623 +68,240 @@ function buildPageList(total: number, current: number) {
   }
   return pages;
 }
-
-/* ====== MODAL ====== */
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title?: string;
-  onClose?: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div className="modal-title">{title}</div>
-          {!!onClose && (
-            <button className="button button--ghost" onClick={onClose}>
-              ✕
-            </button>
-          )}
-        </div>
-        <div className="modal-body">{children}</div>
-      </div>
-    </div>
-  );
+function toUiUser(b: any): User {
+  return {
+    id: (b?.id ?? b?.user_id ?? "").toString(),
+    name: b?.name ?? b?.full_name ?? "",
+    gender: b?.gender === "Nam" || b?.gender === "Nữ" ? b.gender : "Nam",
+    dob: b?.birthday ?? b?.dob ?? undefined,
+    dod: b?.death_day ?? b?.dod ?? undefined,
+    email: b?.email ?? undefined,
+    phone: b?.phone_number ?? b?.phone ?? undefined,
+    address: b?.address ?? undefined,
+    role:
+      (b?.role === "admin" && "Admin") ||
+      (b?.role === "editor" && "Biên tập") ||
+      (b?.role === "member" && "Thành viên") ||
+      (["Admin", "Biên tập", "Thành viên"].includes(b?.role)
+        ? b?.role
+        : "Thành viên"),
+    photoName: b?.profile_img ?? undefined,
+    // map mềm để hỗ trợ cả dữ liệu cũ
+    activities: Array.isArray(b?.activities)
+      ? b.activities.map((x: any) => ({
+          start_date: x.start_date ?? x.startDate ?? x.start ?? "",
+          end_date: x.end_date ?? x.endDate ?? x.end ?? "",
+          position: x.position ?? x.role ?? "",
+          reward: x.reward ?? "",
+          description: x.description ?? x.desc ?? "",
+        }))
+      : [],
+    relationships: b?.relationships
+      ? {
+          father: b.relationships.father ?? "",
+          mother: b.relationships.mother ?? "",
+          spouse: b.relationships.spouse ?? "",
+          children: Array.isArray(b.relationships.children)
+            ? b.relationships.children
+            : [],
+        }
+      : undefined,
+  };
 }
 
-/* ====== CHI TIẾT USER (POPUP) ====== */
-function UserDetail({
-  user,
-  users,
-  onSave,
-  onClose,
-}: {
-  user: User;
-  users: User[];
-  onSave: (u: User) => void;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = React.useState<"info" | "activities" | "relations">(
-    "info"
-  );
-
-  const initialActivities: Activity[] =
-    user.activities && user.activities.length > 0
-      ? user.activities
-      : [{ kind: "role" as const, time: "", desc: "" }];
-
-  const [u, setU] = React.useState<User>({
-    ...user,
-    activities: initialActivities,
-    relationships: {
-      father: user.relationships?.father || "",
-      mother: user.relationships?.mother || "",
-      spouse: user.relationships?.spouse || "",
-      children: user.relationships?.children || [""],
-    },
-  });
-
-  const setField =
-    <K extends keyof User>(key: K) =>
-    (value: User[K]) =>
-      setU((prev) => ({ ...prev, [key]: value }));
-
-  const fileRef = React.useRef<HTMLInputElement>(null);
-  const nameOptions = users.map((x) => x.name).filter((n) => n !== u.name); // tránh chọn chính mình
-
-  /* ====== RENDER ====== */
-  return (
-    <div>
-      {/* TAB BAR */}
-      <div className="tabbar">
-        <button
-          className={cx("button", tab === "info" && "button--active")}
-          onClick={() => setTab("info")}
-        >
-          Thông tin
-        </button>
-        <button
-          className={cx("button", tab === "activities" && "button--active")}
-          onClick={() => setTab("activities")}
-        >
-          Quá trình hoạt động
-        </button>
-        <button
-          className={cx("button", tab === "relations" && "button--active")}
-          onClick={() => setTab("relations")}
-        >
-          Mối quan hệ
-        </button>
-      </div>
-
-      {/* TAB: THÔNG TIN */}
-      {tab === "info" && (
-        <div className="form form-grid">
-          <div className="fi">
-            <label>Họ tên</label>
-            <div className="control">
-              <input
-                value={u.name}
-                onChange={(e) => setField("name")(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="fi">
-            <label>Giới tính</label>
-            <div className="control">
-              <select
-                value={u.gender}
-                onChange={(e) =>
-                  setField("gender")(e.target.value as User["gender"])
-                }
-              >
-                <option value="Nam">Nam</option>
-                <option value="Nữ">Nữ</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="fi fi--date">
-            <label>Ngày sinh</label>
-            <div className="control control--with-clear">
-              <input
-                type="date"
-                value={u.dob || ""}
-                onChange={(e) => setField("dob")(e.target.value)}
-              />
-              <button
-                className="button button--ghost button--icon clear-btn"
-                title="Xóa dữ liệu ngày sinh"
-                onClick={() => setField("dob")(undefined)}
-                aria-label="Xóa dữ liệu ngày sinh"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div className="fi fi--date">
-            <label>Ngày mất</label>
-            <div className="control control--with-clear">
-              <input
-                type="date"
-                value={u.dod || ""}
-                onChange={(e) => setField("dod")(e.target.value)}
-              />
-              <button
-                className="button button--ghost button--icon clear-btn"
-                title="Xóa dữ liệu ngày mất"
-                onClick={() => setField("dod")(undefined)}
-                aria-label="Xóa dữ liệu ngày mất"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div className="fi">
-            <label>Email</label>
-            <div className="control">
-              <input
-                type="email"
-                value={u.email || ""}
-                onChange={(e) => setField("email")(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="fi">
-            <label>Số điện thoại</label>
-            <div className="control">
-              <input
-                value={u.phone || ""}
-                onChange={(e) => setField("phone")(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="fi" style={{ gridColumn: "1 / -1" }}>
-            <label>Địa chỉ</label>
-            <div className="control">
-              <input
-                value={u.address || ""}
-                onChange={(e) => setField("address")(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="fi">
-            <label>Vai trò</label>
-            <div className="control">
-              <select
-                value={u.role}
-                onChange={(e) => setField("role")(e.target.value as Role)}
-              >
-                <option>Thành viên</option>
-                <option>Biên tập</option>
-                <option>Admin</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="fi" style={{ gridColumn: "1 / -1" }}>
-            <label>Ảnh</label>
-            <div className="control">
-              <button
-                className="button"
-                onClick={() => fileRef.current?.click()}
-              >
-                Upload
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.currentTarget.files?.[0];
-                  if (f) setField("photoName")(f.name);
-                }}
-              />
-              <input
-                placeholder="Tên file ảnh"
-                value={u.photoName || ""}
-                onChange={(e) => setField("photoName")(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            className="actions actions--center actions--even"
-            style={{ gridColumn: "1 / -1", marginTop: 8 }}
-          >
-            <button
-              className="button button--primary"
-              onClick={() => onSave(u)}
-            >
-              Cập nhật
-            </button>
-            <button className="button" onClick={onClose}>
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: HOẠT ĐỘNG */}
-      {tab === "activities" && (
-        <div className="form">
-          <div className="actions tab-actions" style={{ marginBottom: 6 }}>
-            <button
-              className="button"
-              onClick={() =>
-                setU((prev) => ({
-                  ...prev,
-                  activities: [
-                    ...(prev.activities || []),
-                    { time: "", desc: "", kind: "role" },
-                  ],
-                }))
-              }
-            >
-              + Thêm chức vụ
-            </button>
-            <button
-              className="button"
-              onClick={() =>
-                setU((prev) => ({
-                  ...prev,
-                  activities: [
-                    ...(prev.activities || []),
-                    { time: "", desc: "", kind: "event" },
-                  ],
-                }))
-              }
-            >
-              + Thêm sự kiện
-            </button>
-          </div>
-
-          <div className="list-plain">
-            <div className="row row--head">
-              <div>Hoạt động</div>
-              <div>Thời gian</div>
-              <div>Mô tả</div>
-              <div />
-            </div>
-
-            {(u.activities || [{ kind: "role", time: "", desc: "" }]).map(
-              (a, i) => (
-                <div key={i} className="row">
-                  <select
-                    value={a.kind}
-                    onChange={(e) => {
-                      const next = [...(u.activities || [])];
-                      next[i] = {
-                        ...a,
-                        kind: e.target.value as Activity["kind"],
-                      };
-                      setU({ ...u, activities: next });
-                    }}
-                  >
-                    <option value="role">Chức vụ</option>
-                    <option value="event">Sự kiện</option>
-                  </select>
-                  <input
-                    placeholder="Thời gian"
-                    value={a.time}
-                    onChange={(e) => {
-                      const next = [...(u.activities || [])];
-                      next[i] = { ...a, time: e.target.value };
-                      setU({ ...u, activities: next });
-                    }}
-                  />
-                  <input
-                    placeholder="Mô tả"
-                    value={a.desc}
-                    onChange={(e) => {
-                      const next = [...(u.activities || [])];
-                      next[i] = { ...a, desc: e.target.value };
-                      setU({ ...u, activities: next });
-                    }}
-                  />
-                  <button
-                    className="button button--ghost button--icon"
-                    title="Xóa dòng"
-                    onClick={() => {
-                      const next = [...(u.activities || [])];
-                      next.splice(i, 1);
-                      setU({
-                        ...u,
-                        activities: next.length
-                          ? next
-                          : [{ kind: "role", time: "", desc: "" }],
-                      });
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )
-            )}
-          </div>
-
-          <div
-            className="actions actions--center actions--even"
-            style={{ marginTop: 8 }}
-          >
-            <button
-              className="button button--primary"
-              onClick={() => onSave(u)}
-            >
-              Cập nhật
-            </button>
-            <button className="button" onClick={onClose}>
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: MỐI QUAN HỆ — dropdown toàn bộ người dùng */}
-      {tab === "relations" && (
-        <div className="form">
-          <div className="form-grid">
-            <div className="fi">
-              <label>Bố</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.father || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        father: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {nameOptions.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="fi">
-              <label>Mẹ</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.mother || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        mother: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {nameOptions.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="fi">
-              <label>{u.gender === "Nam" ? "Vợ" : "Chồng"}</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.spouse || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        spouse: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {nameOptions.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="fi" style={{ gridColumn: "1 / -1" }}>
-              <label>Con</label>
-              <div className="control" style={{ flexWrap: "wrap", gap: 8 }}>
-                {(u.relationships?.children || [""]).map((c, i) => (
-                  <div key={i} className="child-chip">
-                    <select
-                      value={c}
-                      onChange={(e) => {
-                        const next = [...(u.relationships?.children || [])];
-                        next[i] = e.target.value;
-                        setU({
-                          ...u,
-                          relationships: { ...u.relationships, children: next },
-                        });
-                      }}
-                      style={{ minWidth: 220 }}
-                    >
-                      <option value="">-- Chọn --</option>
-                      {nameOptions.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="button button--ghost button--icon"
-                      title="Xóa con này"
-                      onClick={() => {
-                        const next = [...(u.relationships?.children || [])];
-                        next.splice(i, 1);
-                        setU({
-                          ...u,
-                          relationships: { ...u.relationships, children: next },
-                        });
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="button"
-                  onClick={() => {
-                    const next = [...(u.relationships?.children || []), ""];
-                    setU({
-                      ...u,
-                      relationships: { ...u.relationships, children: next },
-                    });
-                  }}
-                >
-                  + Thêm
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="actions actions--center actions--even"
-            style={{ marginTop: 8 }}
-          >
-            <button
-              className="button button--primary"
-              onClick={() => onSave(u)}
-            >
-              Cập nhật
-            </button>
-            <button className="button" onClick={onClose}>
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+/* ========================= useDebounce ========================== */
+function useDebounce<T>(value: T, delay = 400) {
+  const [v, setV] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
 }
 
-/* ====== TRANG DANH SÁCH / TÌM KIẾM + PHÂN TRANG ====== */
+/* ============================ UI =============================== */
 type SortKey = "name" | "gender" | "dob" | "phone" | "address";
 type SortDir = "asc" | "desc";
 
 export default function Users() {
-  const [users, setUsers] = React.useState<User[]>(initialUsers);
+  // dữ liệu hiện tại (1 trang từ server)
+  const [rows, setRows] = React.useState<User[]>([]);
+  // tham số phân trang từ server
+  const PAGE_SIZE = 10;
+  const [page, setPage] = React.useState(1);
+  const [totalItems, setTotalItems] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+
+  // tìm kiếm (server-side)
   const [keyword, setKeyword] = React.useState("");
+  const debouncedKeyword = useDebounce(keyword, 400);
+
+  // popup
   const [picked, setPicked] = React.useState<User | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = React.useState<User | undefined>(
     undefined
   );
   const [createMode, setCreateMode] = React.useState(false);
 
-  // Pagination (10 bản ghi/trang)
-  const PAGE_SIZE = 10;
-  const [page, setPage] = React.useState(1);
-
-  // Sorting
+  // sort trong 1 trang (cục bộ để dễ nhìn)
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
   const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
-  const filtered = React.useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    if (!kw) return users;
-    return users.filter((u) => {
-      const hay = `${u.name} ${u.gender} ${u.phone || ""} ${u.email || ""} ${
-        u.address || ""
-      }`.toLowerCase();
-      return hay.includes(kw);
-    });
-  }, [users, keyword]);
+  // đảm bảo base & token
+  React.useEffect(() => {
+    setApiBase("http://localhost:3000/api/v1");
+    const t = getAccessToken();
+    if (t) setAccessToken(t);
+  }, []);
 
-  // Sort trước khi phân trang
+  const refresh = React.useCallback(async (p: number, search: string) => {
+    const r: ListResult = await listUsers({
+      page: p,
+      limit: PAGE_SIZE,
+      search: search || undefined,
+    });
+
+    // nếu page > totalPages (vd. sau khi xoá) → lùi về trang cuối
+    if (r.meta.totalPages > 0 && p > r.meta.totalPages) {
+      const last = r.meta.totalPages;
+      const r2: ListResult = await listUsers({
+        page: last,
+        limit: PAGE_SIZE,
+        search: search || undefined,
+      });
+      setRows((r2.items || []).map(toUiUser));
+      setTotalItems(r2.meta.totalItems || 0);
+      setTotalPages(r2.meta.totalPages || 1);
+      setPage(last);
+      return;
+    }
+
+    setRows((r.items || []).map(toUiUser));
+    setTotalItems(r.meta.totalItems || 0);
+    setTotalPages(r.meta.totalPages || 1);
+  }, []);
+
+  // đổi keyword -> về trang 1
+  React.useEffect(() => {
+    setPage(1);
+  }, [debouncedKeyword]);
+
+  // tải dữ liệu khi page/keyword đổi
+  React.useEffect(() => {
+    refresh(page, debouncedKeyword).catch((e) =>
+      console.error("[Users] listUsers error:", e)
+    );
+  }, [page, debouncedKeyword, refresh]);
+
+  // sort trong trang
   const sorted = React.useMemo(() => {
-    const arr = [...filtered];
-    const get = (u: User) => {
-      switch (sortKey) {
-        case "name":
-          return u.name || "";
-        case "gender":
-          return u.gender || "";
-        case "dob":
-          return u.dob || "";
-        case "phone":
-          return u.phone || "";
-        case "address":
-          return u.address || "";
-      }
-    };
+    const arr = [...rows];
+    const get = (u: User) =>
+      sortKey === "name"
+        ? u.name
+        : sortKey === "gender"
+        ? u.gender
+        : sortKey === "dob"
+        ? u.dob || ""
+        : sortKey === "phone"
+        ? u.phone || ""
+        : u.address || "";
     arr.sort((a, b) => {
-      const av = get(a) || "";
-      const bv = get(b) || "";
-      const cmp = String(av).localeCompare(String(bv));
+      const cmp = String(get(a)).localeCompare(String(get(b)));
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [filtered, sortKey, sortDir]);
+  }, [rows, sortKey, sortDir]);
 
-  React.useEffect(() => {
-    setPage(1);
-  }, [keyword, sortKey, sortDir]);
-
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const isEmpty = total === 0;
-  const current = Math.min(page, totalPages);
-  const start = (current - 1) * PAGE_SIZE;
-  const paginated = sorted.slice(start, start + PAGE_SIZE);
+  const isEmpty = sorted.length === 0;
 
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
       setSortKey(key);
       setSortDir("asc");
-    } else {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+  };
+
+  /* ------------------------ CRUD HANDLERS ------------------------ */
+  function toBackendPayload(u: User) {
+    return {
+      id: u.id || undefined,
+      name: u.name,
+      gender: u.gender,
+      birthday: u.dob || null,
+      death_day: u.dod || null,
+      email: u.email || null,
+      phone_number: u.phone || null,
+      address: u.address || null,
+      role:
+        u.role === "Admin"
+          ? "admin"
+          : u.role === "Biên tập"
+          ? "editor"
+          : "member",
+      profile_img: u.photoName || null,
+    };
+  }
+
+  const onSaveInfo = async (u: User) => {
+    try {
+      await updateUser(u.id, toBackendPayload(u));
+      setPicked(undefined);
+      await refresh(page, debouncedKeyword);
+    } catch (e) {
+      console.error("Cập nhật thông tin thất bại:", e);
+    }
+  };
+  const onSaveActivities = async (u: User) => {
+    try {
+      await saveActivities(u.id, u.activities || []);
+      setPicked(undefined);
+      await refresh(page, debouncedKeyword);
+    } catch (e) {
+      console.error("Lưu hoạt động thất bại:", e);
+    }
+  };
+  const onSaveRelations = async (u: User) => {
+    try {
+      await saveRelationships(u.id, u.relationships || { children: [] });
+      setPicked(undefined);
+      await refresh(page, debouncedKeyword);
+    } catch (e) {
+      console.error("Lưu quan hệ thất bại:", e);
+    }
+  };
+  const onCreate = async (u: User) => {
+    try {
+      await createUser(toBackendPayload(u));
+      setCreateMode(false);
+      setPage(1);
+      await refresh(1, debouncedKeyword);
+    } catch (e) {
+      console.error("Tạo mới thất bại:", e);
+    }
+  };
+  const doDelete = async (u: User) => {
+    try {
+      await deleteUser(u.id);
+      setConfirmDelete(undefined);
+      await refresh(page, debouncedKeyword);
+    } catch (e) {
+      console.error("Xóa thất bại:", e);
     }
   };
 
-  const onSave = (u: User) => {
-    // Cập nhật & đóng popup như yêu cầu
-    setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)));
-    setPicked(undefined);
-  };
-
-  const onCreate = (u: User) => {
-    // Thêm & ĐÓNG popup thêm mới
-    setUsers((prev) => [u, ...prev]);
-    setCreateMode(false);
-    // Không tự động mở popup chi tiết
-  };
-
+  /* --------------------------- UI LIST --------------------------- */
   return (
     <div className="users-wrap">
       <div className="card">
-        {/* TIÊU ĐỀ MÀN HÌNH */}
         <div className="page-head">
           <div className="page-title">Quản lý người dùng</div>
+          <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+            Trang {totalPages ? page : 0}/{totalPages} • Tổng {totalItems} bản
+            ghi
+          </div>
         </div>
 
-        {/* TÌM KIẾM + THÊM MỚI + ĐẾM BẢN GHI */}
         <div className="toolbar">
           <div className="search-group">
             <label htmlFor="searchInput" className="search-label">
@@ -721,7 +315,6 @@ export default function Users() {
               onChange={(e) => setKeyword(e.target.value)}
             />
           </div>
-
           <div className="toolbar-right">
             <button
               className="button button--primary add-btn"
@@ -735,15 +328,13 @@ export default function Users() {
             </button>
           </div>
         </div>
-        <div className="count">Tìm thấy {total} kết quả</div>
-        <div className="thead">Kết quả tìm kiếm</div>
 
-        {isEmpty && keyword.trim() !== "" && (
+        <div className="thead">Kết quả</div>
+        {isEmpty && (
           <div className="search-empty-banner">Không tìm thấy kết quả</div>
         )}
-        {/* DANH SÁCH */}
+
         <div className="list" role="list">
-          {/* HEADER có nút mũi tên sắp xếp */}
           {!isEmpty && (
             <div
               className="users-tr tr--head"
@@ -857,7 +448,8 @@ export default function Users() {
               </div>
             </div>
           )}
-          {paginated.map((u) => (
+
+          {sorted.map((u) => (
             <div
               key={u.id}
               className="users-tr"
@@ -907,69 +499,66 @@ export default function Users() {
         </div>
 
         {/* PHÂN TRANG */}
-        {!isEmpty && (
-          <div className="pagination">
-            <button
-              className="page-btn"
-              disabled={current <= 1}
-              onClick={() => setPage(1)}
-              title="Trang đầu"
-            >
-              «
-            </button>
-            <button
-              className="page-btn"
-              disabled={current <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              title="Trang trước"
-            >
-              ‹
-            </button>
-            {buildPageList(totalPages, current).map((p, i) =>
-              typeof p === "number" ? (
-                <button
-                  key={i}
-                  className={cx(
-                    "page-btn",
-                    p === current && "page-btn--active"
-                  )}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              ) : (
-                <span key={i} className="page-ellipsis">
-                  {p}
-                </span>
-              )
-            )}
-            <button
-              className="page-btn"
-              disabled={current >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              title="Trang sau"
-            >
-              ›
-            </button>
-            <button
-              className="page-btn"
-              disabled={current >= totalPages}
-              onClick={() => setPage(totalPages)}
-              title="Trang cuối"
-            >
-              »
-            </button>
-          </div>
-        )}
+        <div className="pagination">
+          <button
+            className="page-btn"
+            disabled={page <= 1}
+            onClick={() => setPage(1)}
+            title="Trang đầu"
+          >
+            «
+          </button>
+          <button
+            className="page-btn"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            title="Trang trước"
+          >
+            ‹
+          </button>
+          {buildPageList(totalPages, page).map((p, i) =>
+            typeof p === "number" ? (
+              <button
+                key={i}
+                className={cx("page-btn", p === page && "page-btn--active")}
+                onClick={() => setPage(p)}
+              >
+                {p}
+              </button>
+            ) : (
+              <span key={i} className="page-ellipsis">
+                {p}
+              </span>
+            )
+          )}
+          <button
+            className="page-btn"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            title="Trang sau"
+          >
+            ›
+          </button>
+          <button
+            className="page-btn"
+            disabled={page >= totalPages}
+            onClick={() => setPage(totalPages)}
+            title="Trang cuối"
+          >
+            »
+          </button>
+        </div>
       </div>
 
-      {/* POPUP CHI TIẾT (XEM/CẬP NHẬT) */}
+      {/* POPUP CHI TIẾT */}
       {picked && !createMode && (
         <Modal title={picked.name} onClose={() => setPicked(undefined)}>
           <UserDetail
             user={picked}
-            users={users}
-            onSave={onSave}
+            users={rows}
+            onSaveInfo={onSaveInfo}
+            onSaveActivities={onSaveActivities}
+            onSaveRelations={onSaveRelations}
             onClose={() => setPicked(undefined)}
           />
         </Modal>
@@ -985,7 +574,7 @@ export default function Users() {
         </Modal>
       )}
 
-      {/* XÁC NHẬN XÓA */}
+      {/* POPUP XÓA */}
       {confirmDelete && (
         <Modal title="Xác nhận xóa" onClose={() => setConfirmDelete(undefined)}>
           <p>
@@ -994,13 +583,7 @@ export default function Users() {
           <div className="actions">
             <button
               className="button button--danger"
-              onClick={() => {
-                setUsers((prev) =>
-                  prev.filter((x) => x.id !== confirmDelete.id)
-                );
-                setConfirmDelete(undefined);
-                if (picked?.id === confirmDelete.id) setPicked(undefined);
-              }}
+              onClick={() => doDelete(confirmDelete)}
             >
               Xóa
             </button>
@@ -1017,16 +600,581 @@ export default function Users() {
   );
 }
 
-/* ====== FORM TẠO MỚI (giống tab Thông tin) ====== */
+/* ---------------------- Components phụ ---------------------- */
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title?: string;
+  onClose?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">{title}</div>
+          {!!onClose && (
+            <button className="button button--ghost" onClick={onClose}>
+              ✕
+            </button>
+          )}
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function UserDetail({
+  user,
+  users,
+  onSaveInfo,
+  onSaveActivities,
+  onSaveRelations,
+  onClose,
+}: {
+  user: User;
+  users: User[];
+  onSaveInfo: (u: User) => Promise<void>;
+  onSaveActivities: (u: User) => Promise<void>;
+  onSaveRelations: (u: User) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = React.useState<"info" | "activities" | "relations">(
+    "info"
+  );
+
+  const initialActivities: ActivityItem[] =
+    user.activities && user.activities.length
+      ? user.activities
+      : [
+          {
+            start_date: "",
+            end_date: "",
+            position: "",
+            reward: "",
+            description: "",
+          },
+        ];
+
+  const [u, setU] = React.useState<User>({
+    ...user,
+    activities: initialActivities,
+    relationships: {
+      father: user.relationships?.father || "",
+      mother: user.relationships?.mother || "",
+      spouse: user.relationships?.spouse || "",
+      children: user.relationships?.children || [""],
+    },
+  });
+
+  const setField =
+    <K extends keyof User>(key: K) =>
+    (value: User[K]) =>
+      setU((prev) => ({ ...prev, [key]: value }));
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const options = (users || [])
+    .map((x) => x?.name || "")
+    .filter((n) => n && n !== u.name);
+
+  return (
+    <div>
+      <div className="tabbar">
+        <button
+          className={"button " + (tab === "info" ? "button--active" : "")}
+          onClick={() => setTab("info")}
+        >
+          Thông tin
+        </button>
+        <button
+          className={"button " + (tab === "activities" ? "button--active" : "")}
+          onClick={() => setTab("activities")}
+        >
+          Quá trình hoạt động
+        </button>
+        <button
+          className={"button " + (tab === "relations" ? "button--active" : "")}
+          onClick={() => setTab("relations")}
+        >
+          Mối quan hệ
+        </button>
+      </div>
+
+      {tab === "info" && (
+        <div className="form form-grid">
+          <div className="fi">
+            <label>Họ tên</label>
+            <div className="control">
+              <input
+                value={u.name}
+                onChange={(e) => setField("name")(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="fi">
+            <label>Giới tính</label>
+            <div className="control">
+              <select
+                value={u.gender}
+                onChange={(e) =>
+                  setField("gender")(e.target.value as User["gender"])
+                }
+              >
+                <option value="Nam">Nam</option>
+                <option value="Nữ">Nữ</option>
+              </select>
+            </div>
+          </div>
+          <div className="fi fi--date">
+            <label>Ngày sinh</label>
+            <div className="control control--with-clear">
+              <input
+                type="date"
+                value={u.dob || ""}
+                onChange={(e) => setField("dob")(e.target.value)}
+              />
+              <button
+                className="button button--ghost button--icon clear-btn"
+                onClick={() => setField("dob")(undefined)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="fi fi--date">
+            <label>Ngày mất</label>
+            <div className="control control--with-clear">
+              <input
+                type="date"
+                value={u.dod || ""}
+                onChange={(e) => setField("dod")(e.target.value)}
+              />
+              <button
+                className="button button--ghost button--icon clear-btn"
+                onClick={() => setField("dod")(undefined)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="fi">
+            <label>Email</label>
+            <div className="control">
+              <input
+                type="email"
+                value={u.email || ""}
+                onChange={(e) => setField("email")(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="fi">
+            <label>Số điện thoại</label>
+            <div className="control">
+              <input
+                value={u.phone || ""}
+                onChange={(e) => setField("phone")(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="fi" style={{ gridColumn: "1 / -1" }}>
+            <label>Địa chỉ</label>
+            <div className="control">
+              <input
+                value={u.address || ""}
+                onChange={(e) => setField("address")(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="fi">
+            <label>Vai trò</label>
+            <div className="control">
+              <select
+                value={u.role}
+                onChange={(e) => setField("role")(e.target.value as any)}
+              >
+                <option>Thành viên</option>
+                <option>Biên tập</option>
+                <option>Admin</option>
+              </select>
+            </div>
+          </div>
+          <div className="fi" style={{ gridColumn: "1 / -1" }}>
+            <label>Ảnh</label>
+            <div className="control">
+              <button
+                className="button"
+                onClick={() => fileRef.current?.click()}
+              >
+                Upload
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.currentTarget.files?.[0];
+                  if (f) setField("photoName")(f.name);
+                }}
+              />
+              <input
+                placeholder="Tên file ảnh"
+                value={u.photoName || ""}
+                onChange={(e) => setField("photoName")(e.target.value)}
+              />
+            </div>
+          </div>
+          <div
+            className="actions actions--center actions--even"
+            style={{ gridColumn: "1 / -1", marginTop: 8 }}
+          >
+            <button
+              className="button button--primary"
+              onClick={() => onSaveInfo(u)}
+            >
+              Cập nhật
+            </button>
+            <button className="button" onClick={onClose}>
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tab === "activities" && (
+        <div className="form">
+          <div className="actions tab-actions" style={{ marginBottom: 6 }}>
+            <button
+              className="button"
+              onClick={() =>
+                setU((prev) => ({
+                  ...prev,
+                  activities: [
+                    ...(prev.activities || []),
+                    {
+                      start_date: "",
+                      end_date: "",
+                      position: "",
+                      reward: "",
+                      description: "",
+                    },
+                  ],
+                }))
+              }
+            >
+              + Thêm
+            </button>
+          </div>
+
+          <div className="list-plain">
+            <div className="row row--head">
+              <div>Ngày bắt đầu</div>
+              <div>Ngày kết thúc</div>
+              <div>Chức vụ</div>
+              <div>Khen thưởng</div>
+              <div>Mô tả</div>
+              <div />
+            </div>
+            {(
+              u.activities || [
+                {
+                  start_date: "",
+                  end_date: "",
+                  position: "",
+                  reward: "",
+                  description: "",
+                },
+              ]
+            ).map((a, i) => (
+              <div key={i} className="row">
+                {/* start_date */}
+                <div className="date-cell control control--with-clear">
+                  <input
+                    type="date"
+                    value={a.start_date || ""}
+                    onChange={(e) => {
+                      const next = [...(u.activities || [])];
+                      next[i] = { ...a, start_date: e.target.value };
+                      setU({ ...u, activities: next });
+                    }}
+                  />
+                  <button
+                    className="button button--ghost button--icon clear-btn"
+                    title="Xóa ngày bắt đầu"
+                    onClick={() => {
+                      const next = [...(u.activities || [])];
+                      next[i] = { ...a, start_date: "" };
+                      setU({ ...u, activities: next });
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* end_date */}
+                <div className="date-cell control control--with-clear">
+                  <input
+                    type="date"
+                    value={a.end_date || ""}
+                    onChange={(e) => {
+                      const next = [...(u.activities || [])];
+                      next[i] = { ...a, end_date: e.target.value };
+                      setU({ ...u, activities: next });
+                    }}
+                  />
+                  <button
+                    className="button button--ghost button--icon clear-btn"
+                    title="Xóa ngày kết thúc"
+                    onClick={() => {
+                      const next = [...(u.activities || [])];
+                      next[i] = { ...a, end_date: "" };
+                      setU({ ...u, activities: next });
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* position */}
+                <input
+                  placeholder="Chức vụ"
+                  value={a.position || ""}
+                  onChange={(e) => {
+                    const next = [...(u.activities || [])];
+                    next[i] = { ...a, position: e.target.value };
+                    setU({ ...u, activities: next });
+                  }}
+                />
+
+                {/* reward */}
+                <input
+                  placeholder="Khen thưởng"
+                  value={a.reward || ""}
+                  onChange={(e) => {
+                    const next = [...(u.activities || [])];
+                    next[i] = { ...a, reward: e.target.value };
+                    setU({ ...u, activities: next });
+                  }}
+                />
+
+                {/* description */}
+                <textarea
+                  placeholder="Mô tả"
+                  value={a.description || ""}
+                  onChange={(e) => {
+                    const next = [...(u.activities || [])];
+                    next[i] = { ...a, description: e.target.value };
+                    setU({ ...u, activities: next });
+                  }}
+                />
+
+                <button
+                  className="button button--ghost button--icon"
+                  title="Xóa dòng"
+                  onClick={() => {
+                    const next = [...(u.activities || [])];
+                    next.splice(i, 1);
+                    setU({
+                      ...u,
+                      activities: next.length
+                        ? next
+                        : [
+                            {
+                              start_date: "",
+                              end_date: "",
+                              position: "",
+                              reward: "",
+                              description: "",
+                            },
+                          ],
+                    });
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div
+            className="actions actions--center actions--even"
+            style={{ marginTop: 8 }}
+          >
+            <button
+              className="button button--primary"
+              onClick={() => onSaveActivities(u)}
+            >
+              Cập nhật
+            </button>
+            <button className="button" onClick={onClose}>
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tab === "relations" && (
+        <div className="form">
+          <div className="form-grid">
+            <div className="fi">
+              <label>Bố</label>
+              <div className="control">
+                <select
+                  value={u.relationships?.father || ""}
+                  onChange={(e) =>
+                    setU({
+                      ...u,
+                      relationships: {
+                        ...u.relationships,
+                        father: e.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="">-- Chọn --</option>
+                  {options.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="fi">
+              <label>Mẹ</label>
+              <div className="control">
+                <select
+                  value={u.relationships?.mother || ""}
+                  onChange={(e) =>
+                    setU({
+                      ...u,
+                      relationships: {
+                        ...u.relationships,
+                        mother: e.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="">-- Chọn --</option>
+                  {options.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="fi">
+              <label>{u.gender === "Nam" ? "Vợ" : "Chồng"}</label>
+              <div className="control">
+                <select
+                  value={u.relationships?.spouse || ""}
+                  onChange={(e) =>
+                    setU({
+                      ...u,
+                      relationships: {
+                        ...u.relationships,
+                        spouse: e.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="">-- Chọn --</option>
+                  {options.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="fi" style={{ gridColumn: "1 / -1" }}>
+              <label>Con</label>
+              <div className="control" style={{ flexWrap: "wrap", gap: 8 }}>
+                {(u.relationships?.children || [""]).map((c, i) => (
+                  <div key={i} className="child-chip">
+                    <select
+                      value={c}
+                      onChange={(e) => {
+                        const next = [...(u.relationships?.children || [])];
+                        next[i] = e.target.value;
+                        setU({
+                          ...u,
+                          relationships: { ...u.relationships, children: next },
+                        });
+                      }}
+                      style={{ minWidth: 220 }}
+                    >
+                      <option value="">-- Chọn --</option>
+                      {options.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="button button--ghost button--icon"
+                      title="Xóa con này"
+                      onClick={() => {
+                        const next = [...(u.relationships?.children || [])];
+                        next.splice(i, 1);
+                        setU({
+                          ...u,
+                          relationships: { ...u.relationships, children: next },
+                        });
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  className="button"
+                  onClick={() => {
+                    const next = [...(u.relationships?.children || []), ""];
+                    setU({
+                      ...u,
+                      relationships: { ...u.relationships, children: next },
+                    });
+                  }}
+                >
+                  + Thêm
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="actions actions--center actions--even"
+            style={{ marginTop: 8 }}
+          >
+            <button
+              className="button button--primary"
+              onClick={() => onSaveRelations(u)}
+            >
+              Cập nhật
+            </button>
+            <button className="button" onClick={onClose}>
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------- Create Popup ------------------------- */
 function CreateUser({
   onCreate,
   onClose,
 }: {
-  onCreate: (u: User) => void;
+  onCreate: (u: User) => Promise<void>;
   onClose: () => void;
 }) {
   const [u, setU] = React.useState<User>({
-    id: `u_${Date.now()}`,
+    id: "",
     name: "",
     gender: "Nam",
     role: "Thành viên",
@@ -1036,12 +1184,19 @@ function CreateUser({
     dob: "",
     dod: "",
     photoName: "",
-    activities: [{ kind: "role", time: "", desc: "" }],
+    activities: [
+      {
+        start_date: "",
+        end_date: "",
+        position: "",
+        reward: "",
+        description: "",
+      },
+    ],
     relationships: { children: [] },
   });
-
   const fileRef = React.useRef<HTMLInputElement>(null);
-
+  const canSubmit = (u.name || "").trim().length > 0;
   return (
     <div className="form form-grid">
       <div className="fi">
@@ -1053,7 +1208,6 @@ function CreateUser({
           />
         </div>
       </div>
-
       <div className="fi">
         <label>Giới tính</label>
         <div className="control">
@@ -1068,7 +1222,6 @@ function CreateUser({
           </select>
         </div>
       </div>
-
       <div className="fi fi--date">
         <label>Ngày sinh</label>
         <div className="control control--with-clear">
@@ -1080,14 +1233,11 @@ function CreateUser({
           <button
             className="button button--ghost button--icon clear-btn"
             onClick={() => setU({ ...u, dob: undefined })}
-            title="Xóa dữ liệu ngày sinh"
-            aria-label="Xóa dữ liệu ngày sinh"
           >
             ✕
           </button>
         </div>
       </div>
-
       <div className="fi fi--date">
         <label>Ngày mất</label>
         <div className="control control--with-clear">
@@ -1099,14 +1249,11 @@ function CreateUser({
           <button
             className="button button--ghost button--icon clear-btn"
             onClick={() => setU({ ...u, dod: undefined })}
-            title="Xóa dữ liệu ngày mất"
-            aria-label="Xóa dữ liệu ngày mất"
           >
             ✕
           </button>
         </div>
       </div>
-
       <div className="fi">
         <label>Email</label>
         <div className="control">
@@ -1117,7 +1264,6 @@ function CreateUser({
           />
         </div>
       </div>
-
       <div className="fi">
         <label>Số điện thoại</label>
         <div className="control">
@@ -1127,7 +1273,6 @@ function CreateUser({
           />
         </div>
       </div>
-
       <div className="fi" style={{ gridColumn: "1 / -1" }}>
         <label>Địa chỉ</label>
         <div className="control">
@@ -1137,7 +1282,6 @@ function CreateUser({
           />
         </div>
       </div>
-
       <div className="fi">
         <label>Vai trò</label>
         <div className="control">
@@ -1151,7 +1295,6 @@ function CreateUser({
           </select>
         </div>
       </div>
-
       <div className="fi" style={{ gridColumn: "1 / -1" }}>
         <label>Ảnh</label>
         <div className="control">
@@ -1174,12 +1317,15 @@ function CreateUser({
           />
         </div>
       </div>
-
       <div
         className="actions actions--center actions--even"
         style={{ gridColumn: "1 / -1" }}
       >
-        <button className="button button--primary" onClick={() => onCreate(u)}>
+        <button
+          className="button button--primary"
+          disabled={!canSubmit}
+          onClick={() => onCreate(u)}
+        >
           Lưu
         </button>
         <button className="button" onClick={onClose}>

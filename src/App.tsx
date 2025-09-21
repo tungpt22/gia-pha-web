@@ -1,118 +1,131 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import type { ReactElement } from "react";
-import Navbar from "./components/Navbar/Navbar";
+// src/App.tsx
+// ... (các import như hiện tại)
+import PrivateRoute from "./routes/PrivateRoute";
+import { useAuth } from "./context/AuthContext";
+import Users from "./pages/Users/Users";
+import ProfileEdit from "./pages/Profile/ProfileEdit";
+import Login from "./pages/Login/Login";
+import { useLocation, Navigate, Routes, Route } from "react-router-dom";
 import Footer from "./components/Footer/Footer";
-import { isLoggedIn } from "./auth";
-
-// --- Public screens ---
+import Navbar from "./components/Navbar/Navbar";
 import BangVang from "./pages/BangVang/BangVang";
-import CayPhaHe from "./pages/CayPhaHe/CayPhaHe";
-import type { Person } from "./pages/CayPhaHe/CayPhaHe";
+import CayPhaHe, { type Person } from "./pages/CayPhaHe/CayPhaHe";
 import Home from "./pages/Home/Home";
 import Quy from "./pages/Quy/Quy";
 import SuKien from "./pages/SuKien/SuKien";
 import ThanhVien from "./pages/ThanhVien/ThanhVien";
 import ThuVienAnh from "./pages/ThuVienAnh/ThuVienAnh";
-
-// --- Admin screens ---
-import Awards from "./pages/Awards/Awards";
+import "./styles/global.css";
 import Events from "./pages/Events/Events";
+import Awards from "./pages/Awards/Awards";
 import Finance from "./pages/Finance/Finance";
-import Login from "./pages/Login/Login";
 import Media from "./pages/Media/Media";
 import News from "./pages/News/News";
-import Users from "./pages/Users/Users";
-import ProfileEdit from "./pages/Profile/ProfileEdit";
 
-function ProtectedRoute({ children }: { children: ReactElement }) {
+function LoginRoute() {
+  const { token } = useAuth();
   const location = useLocation();
-  if (!isLoggedIn()) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-  return children;
+  if (token) return <Navigate to="/" replace state={{ from: location }} />;
+  return <Login />;
 }
 
 export default function App() {
   return (
-    <div
-      style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
-    >
+    <>
       <Navbar />
-      <main style={{ flex: 1 }}>
+      <main style={{ minHeight: "60vh" }}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route
-            path="/cay-pha-he"
-            element={<CayPhaHe data={persons} title="Cây phả hệ" />}
-          />
+          {/* Public */}
+          {
+            <Route
+              path="/cay-pha-he"
+              element={<CayPhaHe data={persons} title="Cây phả hệ" />}
+            />
+          }
           <Route path="/thanh-vien" element={<ThanhVien />} />
           <Route path="/bang-vang" element={<BangVang />} />
           <Route path="/su-kien" element={<SuKien />} />
           <Route path="/thu-vien-anh" element={<ThuVienAnh />} />
           <Route path="/quy" element={<Quy />} />
-          <Route path="/login" element={<Login />} />
 
-          {/* Admin routes - yêu cầu đăng nhập */}
+          {/* Login: chặn khi đã đăng nhập */}
+          <Route path="/login" element={<LoginRoute />} />
+
+          {/* Cần đăng nhập */}
           <Route
-            path="/admin/users"
+            path="admin/users"
             element={
-              <ProtectedRoute>
+              <PrivateRoute>
                 <Users />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/events"
-            element={
-              <ProtectedRoute>
-                <Events />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/finance"
-            element={
-              <ProtectedRoute>
-                <Finance />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/awards"
-            element={
-              <ProtectedRoute>
-                <Awards />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/media"
-            element={
-              <ProtectedRoute>
-                <Media />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/news"
-            element={
-              <ProtectedRoute>
-                <News />
-              </ProtectedRoute>
+              </PrivateRoute>
             }
           />
           <Route
             path="/profile"
             element={
-              <ProtectedRoute>
+              <PrivateRoute>
                 <ProfileEdit />
-              </ProtectedRoute>
+              </PrivateRoute>
             }
           />
+
+          {/* Admin routes - yêu cầu đăng nhập */}
+          <Route
+            path="/admin/events"
+            element={
+              <PrivateRoute>
+                <Events />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/finance"
+            element={
+              <PrivateRoute>
+                <Finance />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/awards"
+            element={
+              <PrivateRoute>
+                <Awards />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/media"
+            element={
+              <PrivateRoute>
+                <Media />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/news"
+            element={
+              <PrivateRoute>
+                <News />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <PrivateRoute>
+                <ProfileEdit />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Not found */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <Footer />
-    </div>
+    </>
   );
 }
 

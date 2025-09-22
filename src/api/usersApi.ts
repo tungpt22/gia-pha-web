@@ -1,5 +1,5 @@
 // src/api/usersApi.ts
-// Client API cho Users: base URL, Bearer token, CRUD, activities, relationships, phân trang server-side.
+// Client API cho Users: base URL, Bearer token, CRUD, activities, relationships.
 
 let API_BASE = "http://localhost:3000/api/v1";
 
@@ -49,13 +49,12 @@ async function http(path: string, init: RequestInit = {}) {
   return res.text();
 }
 
-/* ------------------------- Chuẩn hoá LIST ------------------------- */
+/* ----------------------------- Users ------------------------------ */
 export type ListResult = {
   items: any[];
   meta: { page: number; limit: number; totalItems: number; totalPages: number };
 };
 
-// đào mảng items sâu tối đa 5 cấp
 function deepFindArrayOfObjects(
   input: any,
   depth = 0,
@@ -75,25 +74,16 @@ function deepFindArrayOfObjects(
   }
   return null;
 }
-
 function extractItems(res: any): any[] {
-  // PHỔ BIẾN
   if (Array.isArray(res?.data?.items)) return res.data.items;
   if (Array.isArray(res?.items)) return res.items;
-
-  // Dạng BE trả top-level meta (total/page/limit/totalPages) + data là mảng
   if (Array.isArray(res?.data)) return res.data;
-
-  // Một số biến thể khác
   if (Array.isArray(res?.data?.users)) return res.data.users;
   if (Array.isArray(res?.users)) return res.users;
   if (Array.isArray(res?.rows)) return res.rows;
-
-  // fallback: đào sâu
   const deep = deepFindArrayOfObjects(res);
   return deep || [];
 }
-
 function toPosInt(n: any, def: number) {
   const x = Number(n);
   return Number.isFinite(x) && x > 0 ? Math.trunc(x) : def;
@@ -102,9 +92,7 @@ function toNonNegInt(n: any, def: number) {
   const x = Number(n);
   return Number.isFinite(x) && x >= 0 ? Math.trunc(x) : def;
 }
-
 function normalizeListResponse(res: any): ListResult {
-  // Ưu tiên đọc meta ở top-level (trường hợp BE trả: message, data:[], total, page, limit, totalPages)
   const pageTop =
     res?.page ?? res?.data?.page ?? res?.meta?.page ?? res?.data?.meta?.page;
   const limitTop =
@@ -126,7 +114,6 @@ function normalizeListResponse(res: any): ListResult {
     res?.data?.meta?.totalPages;
 
   const items = extractItems(res);
-
   const limit = toPosInt(limitTop, 10);
   const totalItems = toNonNegInt(
     totalTop,
@@ -137,11 +124,9 @@ function normalizeListResponse(res: any): ListResult {
     Math.max(1, Math.ceil((totalItems || 0) / (limit || 10)))
   );
   const page = Math.min(toPosInt(pageTop, 1), totalPages || 1);
-
   return { items, meta: { page, limit, totalItems, totalPages } };
 }
 
-/* ----------------------------- Users ------------------------------ */
 export async function listUsers(params?: {
   page?: number;
   limit?: number;
@@ -169,57 +154,152 @@ export async function deleteUser(id: string): Promise<void> {
   await http(`/users/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-/**
- * Lưu "quá trình hoạt động" theo đặc tả:
- * POST localhost:3000/api/v1/users/:id/activities
- * body mẫu: {
- *   "start_date": "2020-01-10",
- *   "end_date": "2020-01-10",
- *   "description": "Tốt nghiệp thạc sĩ",
- *   "position": "Giám đốc",
- *   "reward": "Giám đốc của năm"
- * }
- *
- * Hàm này nhận mảng hoạt động (nhiều dòng) và gọi tuần tự từng request.
- * Bỏ qua dòng trống (không có dữ liệu nào đáng kể).
- */
-export async function saveActivities(
-  id: string,
+/* ----------------------------- Activities ------------------------------ */
+export async function getActivities(userId: string): Promise<
+  Array<{
+    id: string;
+    start_date: string | null;
+    end_date: string | null;
+    description: string | null;
+    position: string | null;
+    reward: string | null;
+  }>
+> {
+  const res = await http(`/users/${encodeURIComponent(userId)}/activities`, {
+    method: "GET",
+  });
+  const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
+  return arr.map((x: any) => ({
+    id: x.id,
+    start_date: x.start_date ?? null,
+    end_date: x.end_date ?? null,
+    description: x.description ?? null,
+    position: x.position ?? null,
+    reward: x.reward ?? null,
+  }));
+}
+
+export async function addActivities(
+  userId: string,
   activities: Array<{
-    start_date?: string;
-    end_date?: string;
-    description?: string;
-    position?: string;
-    reward?: string;
+    start_date?: string | null;
+    end_date?: string | null;
+    description?: string | null;
+    position?: string | null;
+    reward?: string | null;
   }>
 ): Promise<void> {
-  const url = `/users/${encodeURIComponent(id)}/activities`;
-  const payloads = (activities || []).filter((a) => {
-    const hasText =
-      (a.description && a.description.trim().length > 0) ||
-      (a.position && a.position.trim().length > 0) ||
-      (a.reward && a.reward.trim().length > 0);
-    const hasDate =
-      (a.start_date && a.start_date !== "") ||
-      (a.end_date && a.end_date !== "");
-    return hasText || hasDate;
-  });
-
-  for (const a of payloads) {
+  const url = `/users/${encodeURIComponent(userId)}/activities`;
+  for (const a of activities) {
     const body = {
-      start_date: a.start_date || null,
-      end_date: a.end_date || null,
-      description: a.description || null,
-      position: a.position || null,
-      reward: a.reward || null,
+      start_date: a.start_date ?? null,
+      end_date: a.end_date ?? null,
+      description: a.description ?? null,
+      position: a.position ?? null,
+      reward: a.reward ?? null,
     };
     await http(url, { method: "POST", body: JSON.stringify(body) });
   }
 }
 
-/**
- * POST /users/relationships/{id}  body: { father, mother, spouse, children[] }
- */
+export async function deleteActivities(activityIds: string[]): Promise<void> {
+  for (const activityId of activityIds) {
+    await http(`/users/${encodeURIComponent(activityId)}/activities`, {
+      method: "DELETE",
+    });
+  }
+}
+
+/* ----------------------------- Relationships ------------------------------ */
+export type RelationshipRecord = {
+  id: string;
+  relation_type: string; // "Con" | "Vợ" | "Chồng" | ...
+  from_user: any;
+  to_user: any;
+};
+
+export async function getUserRelationships(
+  userId: string
+): Promise<RelationshipRecord[]> {
+  const res = await http(`/users/${encodeURIComponent(userId)}/relationships`, {
+    method: "GET",
+  });
+  return Array.isArray((res as any)?.data) ? (res as any).data : [];
+}
+
+export async function addRelationship(
+  userId: string,
+  toUserId: string,
+  relationType: string
+): Promise<void> {
+  const body = { toUserId, relationType };
+  await http(`/users/${encodeURIComponent(userId)}/relationships`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteRelationship(
+  fromUserId: string,
+  toUserId: string
+): Promise<void> {
+  await http(
+    `/users/${encodeURIComponent(
+      fromUserId
+    )}/relationships/${encodeURIComponent(toUserId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+export type UserOption = {
+  id: string;
+  name: string;
+  gender?: string;
+  birthday?: string | null;
+  death_day?: string | null;
+  phone_number?: string | null;
+};
+
+export async function listNotChildUsers(): Promise<UserOption[]> {
+  const res = await http(`/users/relationships/notChild`, { method: "GET" });
+  const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
+  return arr.map((x: any) => ({
+    id: x.id,
+    name: x.name,
+    gender: x.gender,
+    birthday: x.birthday ?? null,
+    death_day: x.death_day ?? null,
+    phone_number: x.phone_number ?? null,
+  }));
+}
+export async function listNotWifeUsers(): Promise<UserOption[]> {
+  const res = await http(`/users/relationships/notWife`, { method: "GET" });
+  const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
+  return arr.map((x: any) => ({
+    id: x.id,
+    name: x.name,
+    gender: x.gender,
+    birthday: x.birthday ?? null,
+    death_day: x.death_day ?? null,
+    phone_number: x.phone_number ?? null,
+  }));
+}
+export async function listNotHusbandUsers(): Promise<UserOption[]> {
+  const res = await http(`/users/relationships/notHusband`, { method: "GET" });
+  const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
+  return arr.map((x: any) => ({
+    id: x.id,
+    name: x.name,
+    gender: x.gender,
+    birthday: x.birthday ?? null,
+    death_day: x.death_day ?? null,
+    phone_number: x.phone_number ?? null,
+  }));
+}
+
+/* API cũ saveRelationships vẫn giữ để không phá chỗ khác (không dùng ở tab mới) */
 export async function saveRelationships(
   id: string,
   relationships: {

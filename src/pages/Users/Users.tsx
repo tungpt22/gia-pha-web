@@ -1,29 +1,41 @@
 import * as React from "react";
-// ❌ bỏ import "./Users.css";
+import "./Users.css";
 
 import {
   listUsers,
   createUser,
   updateUser,
   deleteUser,
-  saveActivities,
-  saveRelationships,
+  // activities
+  getActivities,
+  addActivities,
+  deleteActivities,
+  // relationships
+  getUserRelationships,
+  addRelationship,
+  deleteRelationship,
+  listNotChildUsers,
+  listNotWifeUsers,
+  listNotHusbandUsers,
   setApiBase,
   setAccessToken,
   getAccessToken,
   type ListResult,
+  type UserOption,
 } from "../../api/usersApi";
 
 /* ========================== TYPES (UI) ========================== */
 export type ActivityItem = {
+  id?: string;
   start_date?: string;
   end_date?: string;
   position?: string;
   reward?: string;
   description?: string;
+  _markedDelete?: boolean;
 };
 
-type Role = "Admin" | "Biên tập" | "Thành viên";
+type Role = "Admin" | "Thành viên";
 
 export type User = {
   id: string;
@@ -32,7 +44,7 @@ export type User = {
   dob?: string;
   dod?: string;
   email?: string;
-  phone?: string; // map từ backend.phone_number
+  phone?: string;
   address?: string;
   role: Role;
   photoName?: string;
@@ -80,15 +92,12 @@ function toUiUser(b: any): User {
     address: b?.address ?? undefined,
     role:
       (b?.role === "admin" && "Admin") ||
-      (b?.role === "editor" && "Biên tập") ||
       (b?.role === "member" && "Thành viên") ||
-      (["Admin", "Biên tập", "Thành viên"].includes(b?.role)
-        ? b?.role
-        : "Thành viên"),
+      (["Admin", "Thành viên"].includes(b?.role) ? b?.role : "Thành viên"),
     photoName: b?.profile_img ?? undefined,
-    // map mềm để hỗ trợ cả dữ liệu cũ
     activities: Array.isArray(b?.activities)
       ? b.activities.map((x: any) => ({
+          id: x.id,
           start_date: x.start_date ?? x.startDate ?? x.start ?? "",
           end_date: x.end_date ?? x.endDate ?? x.end ?? "",
           position: x.position ?? x.role ?? "",
@@ -119,35 +128,33 @@ function useDebounce<T>(value: T, delay = 400) {
   return v;
 }
 
-/* ============================ UI =============================== */
 type SortKey = "name" | "gender" | "dob" | "phone" | "address";
 type SortDir = "asc" | "desc";
 
+/* ============================ APP =============================== */
 export default function Users() {
-  // dữ liệu hiện tại (1 trang từ server)
   const [rows, setRows] = React.useState<User[]>([]);
-  // tham số phân trang từ server
   const PAGE_SIZE = 10;
   const [page, setPage] = React.useState(1);
   const [totalItems, setTotalItems] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
-
-  // tìm kiếm (server-side)
   const [keyword, setKeyword] = React.useState("");
   const debouncedKeyword = useDebounce(keyword, 400);
 
-  // popup
   const [picked, setPicked] = React.useState<User | undefined>(undefined);
+  const [createMode, setCreateMode] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState<User | undefined>(
     undefined
   );
-  const [createMode, setCreateMode] = React.useState(false);
 
-  // sort trong 1 trang (cục bộ để dễ nhìn)
+  const [notice, setNotice] = React.useState<{
+    title?: string;
+    message: string;
+  } | null>(null);
+
   const [sortKey, setSortKey] = React.useState<SortKey>("name");
   const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
-  // đảm bảo base & token
   React.useEffect(() => {
     setApiBase("http://localhost:3000/api/v1");
     const t = getAccessToken();
@@ -155,45 +162,47 @@ export default function Users() {
   }, []);
 
   const refresh = React.useCallback(async (p: number, search: string) => {
-    const r: ListResult = await listUsers({
-      page: p,
-      limit: PAGE_SIZE,
-      search: search || undefined,
-    });
-
-    // nếu page > totalPages (vd. sau khi xoá) → lùi về trang cuối
-    if (r.meta.totalPages > 0 && p > r.meta.totalPages) {
-      const last = r.meta.totalPages;
-      const r2: ListResult = await listUsers({
-        page: last,
+    try {
+      const r: ListResult = await listUsers({
+        page: p,
         limit: PAGE_SIZE,
         search: search || undefined,
       });
-      setRows((r2.items || []).map(toUiUser));
-      setTotalItems(r2.meta.totalItems || 0);
-      setTotalPages(r2.meta.totalPages || 1);
-      setPage(last);
-      return;
+      if (r.meta.totalPages > 0 && p > r.meta.totalPages) {
+        const last = r.meta.totalPages;
+        const r2: ListResult = await listUsers({
+          page: last,
+          limit: PAGE_SIZE,
+          search: search || undefined,
+        });
+        setRows((r2.items || []).map(toUiUser));
+        setTotalItems(r2.meta.totalItems || 0);
+        setTotalPages(r2.meta.totalPages || 1);
+        setPage(last);
+        return;
+      }
+      setRows((r.items || []).map(toUiUser));
+      setTotalItems(r.meta.totalItems || 0);
+      setTotalPages(r.meta.totalPages || 1);
+    } catch (e: any) {
+      setNotice({
+        title: "Lỗi",
+        message: `Tải danh sách thất bại: ${e?.message || e}`,
+      });
     }
-
-    setRows((r.items || []).map(toUiUser));
-    setTotalItems(r.meta.totalItems || 0);
-    setTotalPages(r.meta.totalPages || 1);
   }, []);
 
-  // đổi keyword -> về trang 1
-  React.useEffect(() => {
-    setPage(1);
-  }, [debouncedKeyword]);
+  React.useEffect(() => setPage(1), [debouncedKeyword]);
 
-  // tải dữ liệu khi page/keyword đổi
   React.useEffect(() => {
     refresh(page, debouncedKeyword).catch((e) =>
-      console.error("[Users] listUsers error:", e)
+      setNotice({
+        title: "Lỗi",
+        message: `Không tải được danh sách: ${e?.message || e}`,
+      })
     );
   }, [page, debouncedKeyword, refresh]);
 
-  // sort trong trang
   const sorted = React.useMemo(() => {
     const arr = [...rows];
     const get = (u: User) =>
@@ -213,8 +222,6 @@ export default function Users() {
     return arr;
   }, [rows, sortKey, sortDir]);
 
-  const isEmpty = sorted.length === 0;
-
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
       setSortKey(key);
@@ -233,12 +240,7 @@ export default function Users() {
       email: u.email || null,
       phone_number: u.phone || null,
       address: u.address || null,
-      role:
-        u.role === "Admin"
-          ? "admin"
-          : u.role === "Biên tập"
-          ? "editor"
-          : "member",
+      role: u.role === "Admin" ? "admin" : "member",
       profile_img: u.photoName || null,
     };
   }
@@ -248,49 +250,51 @@ export default function Users() {
       await updateUser(u.id, toBackendPayload(u));
       setPicked(undefined);
       await refresh(page, debouncedKeyword);
-    } catch (e) {
-      console.error("Cập nhật thông tin thất bại:", e);
+      setNotice({
+        title: "Thành công",
+        message: "Cập nhật thông tin người dùng thành công.",
+      });
+    } catch (e: any) {
+      setNotice({
+        title: "Lỗi",
+        message: `Cập nhật thông tin thất bại: ${e?.message || e}`,
+      });
     }
   };
-  const onSaveActivities = async (u: User) => {
-    try {
-      await saveActivities(u.id, u.activities || []);
-      setPicked(undefined);
-      await refresh(page, debouncedKeyword);
-    } catch (e) {
-      console.error("Lưu hoạt động thất bại:", e);
-    }
-  };
-  const onSaveRelations = async (u: User) => {
-    try {
-      await saveRelationships(u.id, u.relationships || { children: [] });
-      setPicked(undefined);
-      await refresh(page, debouncedKeyword);
-    } catch (e) {
-      console.error("Lưu quan hệ thất bại:", e);
-    }
-  };
+
   const onCreate = async (u: User) => {
     try {
       await createUser(toBackendPayload(u));
       setCreateMode(false);
       setPage(1);
       await refresh(1, debouncedKeyword);
-    } catch (e) {
-      console.error("Tạo mới thất bại:", e);
+      setNotice({
+        title: "Thành công",
+        message: "Thêm người dùng mới thành công.",
+      });
+    } catch (e: any) {
+      setNotice({
+        title: "Lỗi",
+        message: `Tạo mới thất bại: ${e?.message || e}`,
+      });
     }
   };
+
   const doDelete = async (u: User) => {
     try {
       await deleteUser(u.id);
       setConfirmDelete(undefined);
       await refresh(page, debouncedKeyword);
-    } catch (e) {
-      console.error("Xóa thất bại:", e);
+      setNotice({ title: "Thành công", message: "Xoá người dùng thành công." });
+    } catch (e: any) {
+      setConfirmDelete(undefined);
+      setNotice({ title: "Lỗi", message: `Xoá thất bại: ${e?.message || e}` });
     }
   };
 
-  /* --------------------------- UI LIST --------------------------- */
+  /* ============================ RENDER ============================ */
+  const isEmpty = sorted.length === 0;
+
   return (
     <div className="users-wrap">
       <div className="card">
@@ -310,7 +314,7 @@ export default function Users() {
             <input
               id="searchInput"
               className="search"
-              placeholder="Tìm theo tên, số điện thoại, địa chỉ…"
+              placeholder="Tìm theo tên/ số điện thoại"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
@@ -557,9 +561,8 @@ export default function Users() {
             user={picked}
             users={rows}
             onSaveInfo={onSaveInfo}
-            onSaveActivities={onSaveActivities}
-            onSaveRelations={onSaveRelations}
             onClose={() => setPicked(undefined)}
+            onGlobalNotice={(n) => setNotice(n)}
           />
         </Modal>
       )}
@@ -596,11 +599,29 @@ export default function Users() {
           </div>
         </Modal>
       )}
+
+      {/* POPUP THÔNG BÁO (toàn cục) */}
+      {notice && (
+        <Modal
+          title={notice.title || "Thông báo"}
+          onClose={() => setNotice(null)}
+        >
+          <p>{notice.message}</p>
+          <div className="actions actions--center" style={{ marginTop: 8 }}>
+            <button
+              className="button button--primary"
+              onClick={() => setNotice(null)}
+            >
+              Đóng
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-/* ---------------------- Components phụ ---------------------- */
+/* ---------------------- Modal ---------------------- */
 function Modal({
   title,
   onClose,
@@ -611,7 +632,7 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title">{title}</div>
@@ -627,41 +648,44 @@ function Modal({
   );
 }
 
+/* ---------------------- Components phụ ---------------------- */
 function UserDetail({
   user,
   users,
   onSaveInfo,
-  onSaveActivities,
-  onSaveRelations,
   onClose,
+  onGlobalNotice,
 }: {
   user: User;
   users: User[];
   onSaveInfo: (u: User) => Promise<void>;
-  onSaveActivities: (u: User) => Promise<void>;
-  onSaveRelations: (u: User) => Promise<void>;
   onClose: () => void;
+  onGlobalNotice: (n: { title?: string; message: string } | null) => void;
 }) {
   const [tab, setTab] = React.useState<"info" | "activities" | "relations">(
     "info"
   );
 
-  const initialActivities: ActivityItem[] =
-    user.activities && user.activities.length
-      ? user.activities
-      : [
-          {
-            start_date: "",
-            end_date: "",
-            position: "",
-            reward: "",
-            description: "",
-          },
-        ];
+  // ===== activities state (giữ nguyên logic) =====
+  const [loadedActivities, setLoadedActivities] = React.useState(false);
+  const [originalActivities, setOriginalActivities] = React.useState<
+    ActivityItem[] | undefined
+  >(undefined);
 
   const [u, setU] = React.useState<User>({
     ...user,
-    activities: initialActivities,
+    activities:
+      user.activities && user.activities.length
+        ? user.activities
+        : [
+            {
+              start_date: "",
+              end_date: "",
+              position: "",
+              reward: "",
+              description: "",
+            },
+          ],
     relationships: {
       father: user.relationships?.father || "",
       mother: user.relationships?.mother || "",
@@ -670,14 +694,187 @@ function UserDetail({
     },
   });
 
-  const setField =
-    <K extends keyof User>(key: K) =>
-    (value: User[K]) =>
-      setU((prev) => ({ ...prev, [key]: value }));
-  const fileRef = React.useRef<HTMLInputElement>(null);
-  const options = (users || [])
-    .map((x) => x?.name || "")
-    .filter((n) => n && n !== u.name);
+  // ----- local notice cho tab -----
+  const [localNotice, setLocalNotice] = React.useState<{
+    title?: string;
+    message: string;
+  } | null>(null);
+
+  // ====== RELATIONSHIPS ======
+  type RelItem = {
+    id: string;
+    relation_type: "Con" | "Vợ" | "Chồng" | string;
+    to_user: {
+      id: string;
+      name: string;
+      gender?: string;
+      birthday?: string | null;
+      death_day?: string | null;
+      phone_number?: string | null;
+    };
+  };
+  const [rels, setRels] = React.useState<RelItem[]>([]);
+  const [childOpts, setChildOpts] = React.useState<UserOption[]>([]);
+  const [spouseOpts, setSpouseOpts] = React.useState<UserOption[]>([]);
+  const spouseLabel: "Vợ" | "Chồng" = u.gender === "Nam" ? "Vợ" : "Chồng";
+
+  // slots mới (chờ Cập nhật)
+  type Slot = { key: number; selectedId?: string };
+  const [newChildSlots, setNewChildSlots] = React.useState<Slot[]>([]);
+  const [newSpouseSlots, setNewSpouseSlots] = React.useState<Slot[]>([]);
+
+  // modal xem user
+  const [viewUser, setViewUser] = React.useState<RelItem["to_user"] | null>(
+    null
+  );
+
+  async function refreshRelationshipsAndOptions() {
+    try {
+      const [relList, childList, spouseList] = await Promise.all([
+        getUserRelationships(u.id),
+        listNotChildUsers(),
+        u.gender === "Nam" ? listNotWifeUsers() : listNotHusbandUsers(),
+      ]);
+      const mapped: RelItem[] = (relList || []).map((r: any) => ({
+        id: r.id,
+        relation_type: r.relation_type,
+        to_user: {
+          id: r.to_user?.id,
+          name: r.to_user?.name,
+          gender: r.to_user?.gender,
+          birthday: r.to_user?.birthday ?? null,
+          death_day: r.to_user?.death_day ?? null,
+          phone_number: r.to_user?.phone_number ?? null,
+        },
+      }));
+      setRels(mapped);
+      setChildOpts(childList || []);
+      setSpouseOpts(spouseList || []);
+    } catch (e: any) {
+      setLocalNotice({
+        title: "Lỗi",
+        message: `Tải mối quan hệ thất bại: ${e?.message || e}`,
+      });
+    }
+  }
+
+  // load activities (giữ nguyên)
+  React.useEffect(() => {
+    if (tab !== "activities" || loadedActivities) return;
+    (async () => {
+      try {
+        const items = await getActivities(u.id);
+        const normalized = items.map((x) => ({
+          id: x.id,
+          start_date: x.start_date ?? "",
+          end_date: x.end_date ?? "",
+          position: x.position ?? "",
+          reward: x.reward ?? "",
+          description: x.description ?? "",
+        }));
+        setU((prev) => ({
+          ...prev,
+          activities:
+            normalized.length > 0
+              ? normalized
+              : [
+                  {
+                    start_date: "",
+                    end_date: "",
+                    position: "",
+                    reward: "",
+                    description: "",
+                  },
+                ],
+        }));
+        setOriginalActivities(normalized);
+        setLoadedActivities(true);
+      } catch (e: any) {
+        setLocalNotice({
+          title: "Lỗi",
+          message: `Tải danh sách hoạt động thất bại: ${e?.message || e}`,
+        });
+      }
+    })();
+  }, [tab, loadedActivities, u.id]);
+
+  // load relationships khi vào tab
+  React.useEffect(() => {
+    if (tab !== "relations") return;
+    refreshRelationshipsAndOptions();
+  }, [tab, u.gender]);
+
+  // ----- helpers -----
+  function optionById(arr: UserOption[], id?: string) {
+    return arr.find((o) => o.id === id);
+  }
+  function inExisting(kind: "Con" | "Vợ" | "Chồng", toId: string) {
+    return rels.some((r) => r.relation_type === kind && r.to_user.id === toId);
+  }
+
+  // ----- commit adds on Update -----
+  async function handleUpdateRelations() {
+    const adds: Array<{ kind: "Con" | "Vợ" | "Chồng"; id: string }> = [];
+    newChildSlots.forEach(
+      (s) =>
+        s.selectedId &&
+        !inExisting("Con", s.selectedId) &&
+        adds.push({ kind: "Con", id: s.selectedId })
+    );
+    newSpouseSlots.forEach(
+      (s) =>
+        s.selectedId &&
+        !inExisting(spouseLabel, s.selectedId) &&
+        adds.push({ kind: spouseLabel, id: s.selectedId })
+    );
+
+    if (adds.length === 0) {
+      setLocalNotice({
+        title: "Thông báo",
+        message: "Không có thay đổi mới để cập nhật.",
+      });
+      return;
+    }
+
+    try {
+      for (const a of adds) {
+        await addRelationship(u.id, a.id, a.kind);
+      }
+      await refreshRelationshipsAndOptions();
+      setNewChildSlots([]);
+      setNewSpouseSlots([]);
+      const msg = `Đã thêm ${adds.length} mối quan hệ.`;
+      setLocalNotice({ title: "Thành công", message: msg });
+      onGlobalNotice({ title: "Thành công", message: msg });
+    } catch (e: any) {
+      setLocalNotice({
+        title: "Lỗi",
+        message: `Cập nhật mối quan hệ thất bại: ${e?.message || e}`,
+      });
+    }
+  }
+
+  async function handleDeleteRelation(toId: string) {
+    try {
+      await deleteRelationship(u.id, toId);
+      await refreshRelationshipsAndOptions();
+      setLocalNotice({ title: "Thành công", message: `Đã xóa mối quan hệ.` });
+      onGlobalNotice({
+        title: "Thành công",
+        message: `Xóa mối quan hệ thành công.`,
+      });
+    } catch (e: any) {
+      setLocalNotice({
+        title: "Lỗi",
+        message: `Xóa mối quan hệ thất bại: ${e?.message || e}`,
+      });
+    }
+  }
+
+  const spouses = rels.filter(
+    (r) => r.relation_type === "Vợ" || r.relation_type === "Chồng"
+  );
+  const children = rels.filter((r) => r.relation_type === "Con");
 
   return (
     <div>
@@ -702,6 +899,7 @@ function UserDetail({
         </button>
       </div>
 
+      {/* ====== INFO (giữ như cũ) ====== */}
       {tab === "info" && (
         <div className="form form-grid">
           <div className="fi">
@@ -709,7 +907,7 @@ function UserDetail({
             <div className="control">
               <input
                 value={u.name}
-                onChange={(e) => setField("name")(e.target.value)}
+                onChange={(e) => setU({ ...u, name: e.target.value })}
               />
             </div>
           </div>
@@ -719,7 +917,7 @@ function UserDetail({
               <select
                 value={u.gender}
                 onChange={(e) =>
-                  setField("gender")(e.target.value as User["gender"])
+                  setU({ ...u, gender: e.target.value as User["gender"] })
                 }
               >
                 <option value="Nam">Nam</option>
@@ -733,11 +931,11 @@ function UserDetail({
               <input
                 type="date"
                 value={u.dob || ""}
-                onChange={(e) => setField("dob")(e.target.value)}
+                onChange={(e) => setU({ ...u, dob: e.target.value })}
               />
               <button
                 className="button button--ghost button--icon clear-btn"
-                onClick={() => setField("dob")(undefined)}
+                onClick={() => setU({ ...u, dob: undefined })}
               >
                 ✕
               </button>
@@ -749,11 +947,11 @@ function UserDetail({
               <input
                 type="date"
                 value={u.dod || ""}
-                onChange={(e) => setField("dod")(e.target.value)}
+                onChange={(e) => setU({ ...u, dod: e.target.value })}
               />
               <button
                 className="button button--ghost button--icon clear-btn"
-                onClick={() => setField("dod")(undefined)}
+                onClick={() => setU({ ...u, dod: undefined })}
               >
                 ✕
               </button>
@@ -765,7 +963,7 @@ function UserDetail({
               <input
                 type="email"
                 value={u.email || ""}
-                onChange={(e) => setField("email")(e.target.value)}
+                onChange={(e) => setU({ ...u, email: e.target.value })}
               />
             </div>
           </div>
@@ -774,7 +972,7 @@ function UserDetail({
             <div className="control">
               <input
                 value={u.phone || ""}
-                onChange={(e) => setField("phone")(e.target.value)}
+                onChange={(e) => setU({ ...u, phone: e.target.value })}
               />
             </div>
           </div>
@@ -783,7 +981,7 @@ function UserDetail({
             <div className="control">
               <input
                 value={u.address || ""}
-                onChange={(e) => setField("address")(e.target.value)}
+                onChange={(e) => setU({ ...u, address: e.target.value })}
               />
             </div>
           </div>
@@ -792,10 +990,9 @@ function UserDetail({
             <div className="control">
               <select
                 value={u.role}
-                onChange={(e) => setField("role")(e.target.value as any)}
+                onChange={(e) => setU({ ...u, role: e.target.value as Role })}
               >
                 <option>Thành viên</option>
-                <option>Biên tập</option>
                 <option>Admin</option>
               </select>
             </div>
@@ -803,25 +1000,10 @@ function UserDetail({
           <div className="fi" style={{ gridColumn: "1 / -1" }}>
             <label>Ảnh</label>
             <div className="control">
-              <button
-                className="button"
-                onClick={() => fileRef.current?.click()}
-              >
-                Upload
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.currentTarget.files?.[0];
-                  if (f) setField("photoName")(f.name);
-                }}
-              />
               <input
                 placeholder="Tên file ảnh"
                 value={u.photoName || ""}
-                onChange={(e) => setField("photoName")(e.target.value)}
+                onChange={(e) => setU({ ...u, photoName: e.target.value })}
               />
             </div>
           </div>
@@ -842,42 +1024,378 @@ function UserDetail({
         </div>
       )}
 
+      {/* ====== ACTIVITIES (y nguyên) ====== */}
       {tab === "activities" && (
+        <ActivitiesTab
+          u={u}
+          setU={setU}
+          original={originalActivities}
+          setOriginal={setOriginalActivities}
+          setLoaded={setLoadedActivities}
+          onClose={onClose}
+          onLocalNotice={setLocalNotice}
+        />
+      )}
+
+      {/* ====== RELATIONS (đã đổi hành vi: đợi bấm Cập nhật) ====== */}
+      {tab === "relations" && (
         <div className="form">
-          <div className="actions tab-actions" style={{ marginBottom: 6 }}>
+          {/* Spouse */}
+          <div className="fi" style={{ gridColumn: "1 / -1" }}>
+            <label>{spouseLabel}</label>
+            <div className="control" style={{ flexWrap: "wrap", gap: 8 }}>
+              {spouses.map((r) => (
+                <div key={r.to_user.id} className="child-chip">
+                  <input
+                    readOnly
+                    value={r.to_user.name}
+                    style={{ minWidth: 220 }}
+                  />
+                  <button
+                    className="button"
+                    title="Xem"
+                    onClick={() => setViewUser(r.to_user)}
+                  >
+                    Xem
+                  </button>
+                  <button
+                    className="button button--danger"
+                    title="Xóa"
+                    onClick={() => handleDeleteRelation(r.to_user.id)}
+                  >
+                    Xóa
+                  </button>
+                </div>
+              ))}
+              {newSpouseSlots.map((slot) => {
+                const chosen = optionById(spouseOpts, slot.selectedId);
+                return (
+                  <div key={"sp-" + slot.key} className="child-chip">
+                    <select
+                      value={slot.selectedId || ""}
+                      onChange={(e) =>
+                        setNewSpouseSlots((prev) =>
+                          prev.map((s) =>
+                            s.key === slot.key
+                              ? {
+                                  ...s,
+                                  selectedId: e.target.value || undefined,
+                                }
+                              : s
+                          )
+                        )
+                      }
+                      style={{ minWidth: 220 }}
+                    >
+                      <option value="">-- Chọn --</option>
+                      {spouseOpts.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="button"
+                      title="Xem"
+                      disabled={!chosen}
+                      onClick={() =>
+                        chosen &&
+                        setViewUser({
+                          id: chosen.id,
+                          name: chosen.name,
+                          gender: chosen.gender,
+                          birthday: chosen.birthday,
+                          death_day: chosen.death_day,
+                          phone_number: chosen.phone_number,
+                        })
+                      }
+                    >
+                      Xem
+                    </button>
+                    <button
+                      className="button button--ghost button--icon"
+                      title="Bỏ"
+                      onClick={() =>
+                        setNewSpouseSlots((s) =>
+                          s.filter((x) => x.key !== slot.key)
+                        )
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                className="button"
+                onClick={() =>
+                  setNewSpouseSlots((s) => [
+                    ...s,
+                    { key: (s[s.length - 1]?.key ?? 0) + 1 },
+                  ])
+                }
+              >
+                + Thêm
+              </button>
+            </div>
+          </div>
+
+          {/* Children */}
+          <div className="fi" style={{ gridColumn: "1 / -1" }}>
+            <label>Con</label>
+            <div className="control" style={{ flexWrap: "wrap", gap: 8 }}>
+              {children.map((r) => (
+                <div key={r.to_user.id} className="child-chip">
+                  <input
+                    readOnly
+                    value={r.to_user.name}
+                    style={{ minWidth: 220 }}
+                  />
+                  <button
+                    className="button"
+                    title="Xem"
+                    onClick={() => setViewUser(r.to_user)}
+                  >
+                    Xem
+                  </button>
+                  <button
+                    className="button button--danger"
+                    title="Xóa"
+                    onClick={() => handleDeleteRelation(r.to_user.id)}
+                  >
+                    Xóa
+                  </button>
+                </div>
+              ))}
+              {newChildSlots.map((slot) => {
+                const chosen = optionById(childOpts, slot.selectedId);
+                return (
+                  <div key={"ch-" + slot.key} className="child-chip">
+                    <select
+                      value={slot.selectedId || ""}
+                      onChange={(e) =>
+                        setNewChildSlots((prev) =>
+                          prev.map((s) =>
+                            s.key === slot.key
+                              ? {
+                                  ...s,
+                                  selectedId: e.target.value || undefined,
+                                }
+                              : s
+                          )
+                        )
+                      }
+                      style={{ minWidth: 220 }}
+                    >
+                      <option value="">-- Chọn --</option>
+                      {childOpts.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="button"
+                      title="Xem"
+                      disabled={!chosen}
+                      onClick={() =>
+                        chosen &&
+                        setViewUser({
+                          id: chosen.id,
+                          name: chosen.name,
+                          gender: chosen.gender,
+                          birthday: chosen.birthday,
+                          death_day: chosen.death_day,
+                          phone_number: chosen.phone_number,
+                        })
+                      }
+                    >
+                      Xem
+                    </button>
+                    <button
+                      className="button button--ghost button--icon"
+                      title="Bỏ"
+                      onClick={() =>
+                        setNewChildSlots((s) =>
+                          s.filter((x) => x.key !== slot.key)
+                        )
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                className="button"
+                onClick={() =>
+                  setNewChildSlots((s) => [
+                    ...s,
+                    { key: (s[s.length - 1]?.key ?? 0) + 1 },
+                  ])
+                }
+              >
+                + Thêm
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="actions actions--center actions--even"
+            style={{ marginTop: 8 }}
+          >
             <button
-              className="button"
-              onClick={() =>
-                setU((prev) => ({
-                  ...prev,
-                  activities: [
-                    ...(prev.activities || []),
-                    {
-                      start_date: "",
-                      end_date: "",
-                      position: "",
-                      reward: "",
-                      description: "",
-                    },
-                  ],
-                }))
-              }
+              className="button button--primary"
+              onClick={handleUpdateRelations}
             >
-              + Thêm
+              Cập nhật
+            </button>
+            <button className="button" onClick={onClose}>
+              Đóng
             </button>
           </div>
 
-          <div className="list-plain">
-            <div className="row row--head">
-              <div>Ngày bắt đầu</div>
-              <div>Ngày kết thúc</div>
-              <div>Chức vụ</div>
-              <div>Khen thưởng</div>
-              <div>Mô tả</div>
-              <div />
-            </div>
-            {(
-              u.activities || [
+          {/* Modal xem thông tin người được chọn */}
+          {viewUser && (
+            <Modal
+              title="Thông tin người dùng"
+              onClose={() => setViewUser(null)}
+            >
+              <div className="form">
+                <div>
+                  <b>Họ tên:</b> {viewUser.name}
+                </div>
+                <div>
+                  <b>Giới tính:</b> {viewUser.gender || "-"}
+                </div>
+                <div>
+                  <b>Ngày sinh:</b> {viewUser.birthday || "-"}
+                </div>
+                <div>
+                  <b>Ngày mất:</b> {viewUser.death_day || "-"}
+                </div>
+                <div>
+                  <b>Số điện thoại:</b> {viewUser.phone_number || "-"}
+                </div>
+                <div
+                  className="actions actions--center"
+                  style={{ marginTop: 8 }}
+                >
+                  <button
+                    className="button button--primary"
+                    onClick={() => setViewUser(null)}
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )}
+        </div>
+      )}
+
+      {/* local notice */}
+      {localNotice && (
+        <Modal
+          title={localNotice.title || "Thông báo"}
+          onClose={() => setLocalNotice(null)}
+        >
+          <p>{localNotice.message}</p>
+          <div className="actions actions--center" style={{ marginTop: 8 }}>
+            <button
+              className="button button--primary"
+              onClick={() => setLocalNotice(null)}
+            >
+              Đóng
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ====== Activities Tab (giữ nguyên hành vi) ====== */
+function ActivitiesTab({
+  u,
+  setU,
+  original,
+  setOriginal,
+  setLoaded,
+  onClose,
+  onLocalNotice,
+}: {
+  u: User;
+  setU: React.Dispatch<React.SetStateAction<User>>;
+  original: ActivityItem[] | undefined;
+  setOriginal: (x: ActivityItem[] | undefined) => void;
+  setLoaded: (v: boolean) => void;
+  onClose: () => void;
+  onLocalNotice: (n: { title?: string; message: string } | null) => void;
+}) {
+  const isEmpty = (a: ActivityItem) =>
+    !(
+      a?.start_date ||
+      a?.end_date ||
+      a?.position ||
+      a?.reward ||
+      a?.description
+    );
+
+  async function onSaveActivitiesDiff(
+    userId: string,
+    original: ActivityItem[] | undefined,
+    current: ActivityItem[] | undefined
+  ) {
+    const toCreate = (current || []).filter(
+      (a) => !a.id && !a._markedDelete && !isEmpty(a)
+    );
+    const toDeleteIds = (current || [])
+      .filter((a) => a.id && a._markedDelete)
+      .map((a) => a.id!) as string[];
+
+    let created = 0,
+      deleted = 0;
+    try {
+      if (toCreate.length) {
+        await addActivities(
+          userId,
+          toCreate.map((x) => ({
+            start_date: x.start_date || null,
+            end_date: x.end_date || null,
+            description: x.description || null,
+            position: x.position || null,
+            reward: x.reward || null,
+          }))
+        );
+        created = toCreate.length;
+      }
+      if (toDeleteIds.length) {
+        await deleteActivities(toDeleteIds);
+        deleted = toDeleteIds.length;
+      }
+      onLocalNotice({
+        title: "Thành công",
+        message: `Đã cập nhật hoạt động: thêm ${created}, xoá ${deleted}.`,
+      });
+    } catch (e: any) {
+      onLocalNotice({
+        title: "Lỗi",
+        message: `Lưu hoạt động thất bại: ${e?.message || e}`,
+      });
+    }
+  }
+
+  return (
+    <div className="form">
+      <div className="actions tab-actions" style={{ marginBottom: 6 }}>
+        <button
+          className="button"
+          onClick={() =>
+            setU((prev) => ({
+              ...prev,
+              activities: [
+                ...(prev.activities || []),
                 {
                   start_date: "",
                   end_date: "",
@@ -885,14 +1403,36 @@ function UserDetail({
                   reward: "",
                   description: "",
                 },
-              ]
-            ).map((a, i) => (
-              <div key={i} className="row">
-                {/* start_date */}
+              ],
+            }))
+          }
+        >
+          + Thêm
+        </button>
+      </div>
+
+      <div className="list-plain">
+        {(
+          u.activities || [
+            {
+              start_date: "",
+              end_date: "",
+              position: "",
+              reward: "",
+              description: "",
+            },
+          ]
+        ).map((a, i) => {
+          const mark = !!(a as any)._markedDelete;
+          return (
+            <div key={a.id || i} className={cx("row", mark && "row--deleted")}>
+              <div className="field">
+                <label>Ngày bắt đầu</label>
                 <div className="date-cell control control--with-clear">
                   <input
                     type="date"
                     value={a.start_date || ""}
+                    disabled={mark}
                     onChange={(e) => {
                       const next = [...(u.activities || [])];
                       next[i] = { ...a, start_date: e.target.value };
@@ -902,6 +1442,7 @@ function UserDetail({
                   <button
                     className="button button--ghost button--icon clear-btn"
                     title="Xóa ngày bắt đầu"
+                    disabled={mark}
                     onClick={() => {
                       const next = [...(u.activities || [])];
                       next[i] = { ...a, start_date: "" };
@@ -911,12 +1452,15 @@ function UserDetail({
                     ✕
                   </button>
                 </div>
+              </div>
 
-                {/* end_date */}
+              <div className="field">
+                <label>Ngày kết thúc</label>
                 <div className="date-cell control control--with-clear">
                   <input
                     type="date"
                     value={a.end_date || ""}
+                    disabled={mark}
                     onChange={(e) => {
                       const next = [...(u.activities || [])];
                       next[i] = { ...a, end_date: e.target.value };
@@ -926,6 +1470,7 @@ function UserDetail({
                   <button
                     className="button button--ghost button--icon clear-btn"
                     title="Xóa ngày kết thúc"
+                    disabled={mark}
                     onClick={() => {
                       const next = [...(u.activities || [])];
                       next[i] = { ...a, end_date: "" };
@@ -935,232 +1480,116 @@ function UserDetail({
                     ✕
                   </button>
                 </div>
+              </div>
 
-                {/* position */}
+              <div className="field">
+                <label>Chức vụ</label>
                 <input
                   placeholder="Chức vụ"
                   value={a.position || ""}
+                  disabled={mark}
                   onChange={(e) => {
                     const next = [...(u.activities || [])];
                     next[i] = { ...a, position: e.target.value };
                     setU({ ...u, activities: next });
                   }}
                 />
+              </div>
 
-                {/* reward */}
+              <div className="field">
+                <label>Khen thưởng</label>
                 <input
                   placeholder="Khen thưởng"
                   value={a.reward || ""}
+                  disabled={mark}
                   onChange={(e) => {
                     const next = [...(u.activities || [])];
                     next[i] = { ...a, reward: e.target.value };
                     setU({ ...u, activities: next });
                   }}
                 />
+              </div>
 
-                {/* description */}
+              <div className="field">
+                <label>Mô tả</label>
                 <textarea
                   placeholder="Mô tả"
                   value={a.description || ""}
+                  disabled={mark}
                   onChange={(e) => {
                     const next = [...(u.activities || [])];
                     next[i] = { ...a, description: e.target.value };
                     setU({ ...u, activities: next });
                   }}
                 />
-
-                <button
-                  className="button button--ghost button--icon"
-                  title="Xóa dòng"
-                  onClick={() => {
-                    const next = [...(u.activities || [])];
-                    next.splice(i, 1);
-                    setU({
-                      ...u,
-                      activities: next.length
-                        ? next
-                        : [
-                            {
-                              start_date: "",
-                              end_date: "",
-                              position: "",
-                              reward: "",
-                              description: "",
-                            },
-                          ],
-                    });
-                  }}
-                >
-                  ✕
-                </button>
               </div>
-            ))}
-          </div>
 
-          <div
-            className="actions actions--center actions--even"
-            style={{ marginTop: 8 }}
-          >
-            <button
-              className="button button--primary"
-              onClick={() => onSaveActivities(u)}
-            >
-              Cập nhật
-            </button>
-            <button className="button" onClick={onClose}>
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
-
-      {tab === "relations" && (
-        <div className="form">
-          <div className="form-grid">
-            <div className="fi">
-              <label>Bố</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.father || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        father: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {options.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
+              <div className="field field--actions">
+                <label>&nbsp;</label>
+                {a.id ? (
+                  <button
+                    className={cx(
+                      "button button--ghost button--icon",
+                      mark && "to-undo"
+                    )}
+                    title={mark ? "Bỏ đánh dấu xoá" : "Đánh dấu xoá"}
+                    onClick={() => {
+                      const next = [...(u.activities || [])];
+                      next[i] = { ...(a as any), _markedDelete: !mark };
+                      setU({ ...u, activities: next });
+                    }}
+                  >
+                    {mark ? "↺" : "🗑"}
+                  </button>
+                ) : (
+                  <button
+                    className="button button--ghost button--icon"
+                    title="Xóa dòng mới"
+                    onClick={() => {
+                      const next = [...(u.activities || [])];
+                      next.splice(i, 1);
+                      setU({
+                        ...u,
+                        activities: next.length
+                          ? next
+                          : [
+                              {
+                                start_date: "",
+                                end_date: "",
+                                position: "",
+                                reward: "",
+                                description: "",
+                              },
+                            ],
+                      });
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
-            <div className="fi">
-              <label>Mẹ</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.mother || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        mother: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {options.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="fi">
-              <label>{u.gender === "Nam" ? "Vợ" : "Chồng"}</label>
-              <div className="control">
-                <select
-                  value={u.relationships?.spouse || ""}
-                  onChange={(e) =>
-                    setU({
-                      ...u,
-                      relationships: {
-                        ...u.relationships,
-                        spouse: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="">-- Chọn --</option>
-                  {options.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="fi" style={{ gridColumn: "1 / -1" }}>
-              <label>Con</label>
-              <div className="control" style={{ flexWrap: "wrap", gap: 8 }}>
-                {(u.relationships?.children || [""]).map((c, i) => (
-                  <div key={i} className="child-chip">
-                    <select
-                      value={c}
-                      onChange={(e) => {
-                        const next = [...(u.relationships?.children || [])];
-                        next[i] = e.target.value;
-                        setU({
-                          ...u,
-                          relationships: { ...u.relationships, children: next },
-                        });
-                      }}
-                      style={{ minWidth: 220 }}
-                    >
-                      <option value="">-- Chọn --</option>
-                      {options.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="button button--ghost button--icon"
-                      title="Xóa con này"
-                      onClick={() => {
-                        const next = [...(u.relationships?.children || [])];
-                        next.splice(i, 1);
-                        setU({
-                          ...u,
-                          relationships: { ...u.relationships, children: next },
-                        });
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="button"
-                  onClick={() => {
-                    const next = [...(u.relationships?.children || []), ""];
-                    setU({
-                      ...u,
-                      relationships: { ...u.relationships, children: next },
-                    });
-                  }}
-                >
-                  + Thêm
-                </button>
-              </div>
-            </div>
-          </div>
+          );
+        })}
+      </div>
 
-          <div
-            className="actions actions--center actions--even"
-            style={{ marginTop: 8 }}
-          >
-            <button
-              className="button button--primary"
-              onClick={() => onSaveRelations(u)}
-            >
-              Cập nhật
-            </button>
-            <button className="button" onClick={onClose}>
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
+      <div
+        className="actions actions--center actions--even"
+        style={{ marginTop: 8 }}
+      >
+        <button
+          className="button button--primary"
+          onClick={async () => {
+            await onSaveActivitiesDiff(u.id, original, u.activities);
+            onClose();
+          }}
+        >
+          Cập nhật
+        </button>
+        <button className="button" onClick={onClose}>
+          Đóng
+        </button>
+      </div>
     </div>
   );
 }
@@ -1195,7 +1624,6 @@ function CreateUser({
     ],
     relationships: { children: [] },
   });
-  const fileRef = React.useRef<HTMLInputElement>(null);
   const canSubmit = (u.name || "").trim().length > 0;
   return (
     <div className="form form-grid">
@@ -1290,7 +1718,6 @@ function CreateUser({
             onChange={(e) => setU({ ...u, role: e.target.value as Role })}
           >
             <option>Thành viên</option>
-            <option>Biên tập</option>
             <option>Admin</option>
           </select>
         </div>
@@ -1298,18 +1725,6 @@ function CreateUser({
       <div className="fi" style={{ gridColumn: "1 / -1" }}>
         <label>Ảnh</label>
         <div className="control">
-          <button className="button" onClick={() => fileRef.current?.click()}>
-            Upload
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.currentTarget.files?.[0];
-              if (f) setU({ ...u, photoName: f.name });
-            }}
-          />
           <input
             placeholder="Tên file ảnh"
             value={u.photoName || ""}

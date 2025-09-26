@@ -1,0 +1,279 @@
+/* ========== RESET NHẸ CHO CÂY ========== */
+.family-wrap,
+.tree-wrap,
+.ft-canvas,
+.ft-tree,
+.ft-tree ul,
+.ft-tree li {
+  margin: 0;
+  padding: 0;
+}
+.ft-tree,
+.ft-tree ul {
+  list-style: none;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ========== BIẾN DÙNG CHUNG ========== */
+:root {
+  --ft-gap-x: 28px; /* khoảng cách giữa vợ/chồng */
+  --ft-gap-y: 36px; /* khoảng cách dọc giữa tầng */
+  --ft-line: 2px; /* độ dày đường kẻ để không blur */
+  --ft-line-color: #111; /* màu đen theo yêu cầu */
+  --ft-card-w: 160px;
+  --ft-card-h: 110px;
+  --ft-radius: 10px;
+  --ft-bg: #fff;
+}
+
+/* ========== KHUNG CANVAS/TREE ========== */
+.family-wrap {
+  width: 100%;
+  height: 100%;
+  font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: #0f172a;
+}
+.toolbar {
+  margin-bottom: 8px;
+}
+.retry-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+.loading,
+.error-box {
+  padding: 8px 10px;
+}
+
+.tree-wrap {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 120px);
+  overflow: auto;
+  background: var(--ft-bg);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.ft-canvas {
+  position: relative;
+  padding: 40px 80px;
+  transform-origin: 0 0;
+}
+
+/* ========== TÌM KIẾM / ZOOM ========== */
+.ft-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.ft-search {
+  position: relative;
+}
+.ft-search-input {
+  width: 260px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.ft-suggest {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  z-index: 10;
+}
+.ft-suggest-item {
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.ft-suggest-item:hover {
+  background: #f8fafc;
+}
+
+.ft-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ft-zoom-btn,
+.ft-zoom-reset {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ft-zoom-label {
+  min-width: 48px;
+  text-align: center;
+  color: #334155;
+}
+
+/* ========== THẺ NODE ========== */
+.ft-person {
+  position: relative;
+}
+
+.ft-node-card {
+  width: var(--ft-card-w);
+  height: var(--ft-card-h);
+  border: 1px solid #e6e9ee;
+  border-radius: var(--ft-radius);
+  background: #f8fbff;
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  user-select: none;
+}
+.ft-node-selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 0;
+}
+
+.ft-node-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eceff3;
+}
+.ft-node-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ft-node-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ft-node-name {
+  font-weight: 600;
+  color: #0f172a;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ft-node-role {
+  font-size: 12px;
+  color: #64748b;
+}
+.ft-node-view {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ========== CẶP VỢ CHỒNG + THÂN DỌC ========== */
+.ft-couple {
+  display: inline-flex;
+  gap: var(--ft-gap-x);
+  position: relative;
+  margin-bottom: calc(
+    var(--ft-gap-y) + var(--ft-line)
+  ); /* chừa chỗ cho đường ngang + overlap mịn */
+}
+/* thân dọc từ cặp xuống: kéo dài +1 line để overlap với đường ngang */
+.ft-stem {
+  position: absolute;
+  top: calc(var(--ft-card-h) + 8px);
+  width: var(--ft-line);
+  height: calc(var(--ft-gap-y) + var(--ft-line));
+  background: var(--ft-line-color);
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+/* ========== NHÓM CON ========== */
+.ft-children {
+  position: relative;
+  list-style: none;
+  display: flex;
+  gap: calc(var(--ft-gap-x) * 1.5);
+  padding-top: calc(
+    var(--ft-gap-y) + var(--ft-line)
+  ); /* chừa chỗ đường ngang + overlap 1 line */
+  margin: 0;
+  align-items: flex-start;
+}
+/* đường ngang con đầu ↔ con cuối (JS set left/width) */
+.ft-hline {
+  position: absolute;
+  top: 0;
+  height: var(--ft-line);
+  background: var(--ft-line-color);
+  z-index: 0;
+}
+/* thân dọc của từng con: bắt đầu cao hơn 1 line, chiều dài +1 line để overlap mịn */
+.ft-children > li {
+  position: relative;
+}
+.ft-children > li::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--ft-line));
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--ft-line);
+  height: calc(var(--ft-gap-y) + var(--ft-line));
+  background: var(--ft-line-color);
+  z-index: 1;
+}
+
+/* ========== MODAL ========== */
+.ft-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.ft-modal.show {
+  display: flex;
+}
+.ft-modal-body {
+  width: 420px;
+  max-width: calc(100% - 24px);
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+}
+.ft-modal-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.ft-modal-row {
+  margin-top: 6px;
+  color: #334155;
+}

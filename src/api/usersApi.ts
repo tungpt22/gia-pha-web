@@ -262,6 +262,22 @@ export type UserOption = {
   phone_number?: string | null;
 };
 
+export type UserDetail = {
+  id: string;
+  name: string;
+  role?: string | null;
+  gender?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  address?: string | null;
+  birthday?: string | null;
+  death_day?: string | null;
+  profile_img?: string | null;
+  created_dt?: string | null;
+  updated_dt?: string | null;
+  deleted_at?: string | null;
+};
+
 export async function listNotChildUsers(): Promise<UserOption[]> {
   const res = await http(`/users/relationships/notChild`, { method: "GET" });
   const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
@@ -319,4 +335,17 @@ export async function saveRelationships(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export async function getUserById(id: string): Promise<UserDetail | null> {
+  const res = await http(`/users/${id}`, { method: "GET" });
+  const arr = Array.isArray((res as any)?.data) ? (res as any).data : [];
+  return arr.map((x: any) => ({
+    id: x.id,
+    name: x.name,
+    gender: x.gender,
+    birthday: x.birthday ?? null,
+    death_day: x.death_day ?? null,
+    phone_number: x.phone_number ?? null,
+  }));
 }

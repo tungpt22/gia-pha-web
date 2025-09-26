@@ -9,7 +9,7 @@ import { useLocation, Navigate, Routes, Route } from "react-router-dom";
 import Footer from "./components/Footer/Footer";
 import Navbar from "./components/Navbar/Navbar";
 import BangVang from "./pages/BangVang/BangVang";
-import CayPhaHe, { type Person } from "./pages/CayPhaHe/CayPhaHe";
+
 import Home from "./pages/Home/Home";
 import Quy from "./pages/Quy/Quy";
 import SuKien from "./pages/SuKien/SuKien";
@@ -19,8 +19,10 @@ import "./styles/global.css";
 import Events from "./pages/Events/Events";
 import Awards from "./pages/Awards/Awards";
 import Finance from "./pages/Finance/Finance";
-import Media from "./pages/Media/Media";
+import Media from "./pages/MediaManagement/MediaManagement";
 import News from "./pages/News/News";
+import FamilyTree from "./pages/FamilyTree/FamilyTree";
+import MediaManagement from "./pages/MediaManagement/MediaManagement";
 
 function LoginRoute() {
   const { token } = useAuth();
@@ -37,17 +39,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           {/* Public */}
-          {
-            <Route
-              path="/cay-pha-he"
-              element={<CayPhaHe data={persons} title="Cây phả hệ" />}
-            />
-          }
+
           <Route path="/thanh-vien" element={<ThanhVien />} />
           <Route path="/bang-vang" element={<BangVang />} />
           <Route path="/su-kien" element={<SuKien />} />
           <Route path="/thu-vien-anh" element={<ThuVienAnh />} />
           <Route path="/quy" element={<Quy />} />
+          <Route path="/family-tree" element={<FamilyTree />} />
 
           {/* Login: chặn khi đã đăng nhập */}
           <Route path="/login" element={<LoginRoute />} />
@@ -99,7 +97,7 @@ export default function App() {
             path="/admin/media"
             element={
               <PrivateRoute>
-                <Media />
+                <MediaManagement />
               </PrivateRoute>
             }
           />
@@ -128,17 +126,3 @@ export default function App() {
     </>
   );
 }
-
-const persons: Person[] = [
-  {
-    id: "r",
-    name: "Ông Tổ",
-    gender: "Nam",
-    isRoot: true,
-    spouseIds: ["w1", "w2"],
-  },
-  { id: "w1", name: "Bà Tổ 1", gender: "Nữ", spouseIds: ["r"] },
-  { id: "w2", name: "Bà Tổ 2", gender: "Nữ", spouseIds: ["r"] },
-  { id: "c1", name: "Con 1", gender: "Nam", fatherId: "r", motherId: "w1" },
-  { id: "c2", name: "Con 2", gender: "Nữ", fatherId: "r", motherId: "w2" },
-];

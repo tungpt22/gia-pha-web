@@ -72,7 +72,7 @@ export default function Navbar() {
 
         <nav className={"navbar__menu" + (openMobile ? " open" : "")}>
           {item("/", "TRANG CHỦ", true)}
-          {item("/cay-pha-he", "CÂY PHẢ HỆ")}
+          {item("/family-tree", "CÂY PHẢ HỆ")}
           {item("/thanh-vien", "THÀNH VIÊN")}
           {item("/bang-vang", "BẢNG VÀNG")}
           {item("/su-kien", "SỰ KIỆN")}

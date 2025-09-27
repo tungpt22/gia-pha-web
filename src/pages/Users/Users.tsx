@@ -300,10 +300,6 @@ export default function Users() {
       <div className="card">
         <div className="page-head">
           <div className="page-title">Quản lý người dùng</div>
-          <div style={{ marginLeft: "auto", opacity: 0.9 }}>
-            Trang {totalPages ? page : 0}/{totalPages} • Tổng {totalItems} bản
-            ghi
-          </div>
         </div>
 
         <div className="toolbar">
@@ -334,6 +330,9 @@ export default function Users() {
         </div>
 
         <div className="thead">Kết quả</div>
+        <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+          Trang {totalPages ? page : 0}/{totalPages} • Tổng {totalItems} bản ghi
+        </div>
         {isEmpty && (
           <div className="search-empty-banner">Không tìm thấy kết quả</div>
         )}

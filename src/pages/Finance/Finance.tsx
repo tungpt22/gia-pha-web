@@ -1,34 +1,16 @@
+// File: Finance.tsx
 import * as React from "react";
 import "./Finance.css";
 
-/* ===== Types ===== */
-type Tx = {
-  id: string;
-  name: string; // Tên khoản
-  type: "Thu" | "Chi";
-  amount: number; // VND
-  date: string; // YYYY-MM-DD
-  desc: string; // Mô tả
-};
-
-const seed: Tx[] = [
-  {
-    id: "t1",
-    name: "Ủng hộ quỹ",
-    type: "Thu",
-    amount: 5_000_000,
-    date: "2025-07-01",
-    desc: "Đóng góp xây dựng",
-  },
-  {
-    id: "t2",
-    name: "Mua vật tư",
-    type: "Chi",
-    amount: 1_500_000,
-    date: "2025-07-10",
-    desc: "Vật tư sinh hoạt",
-  },
-];
+import {
+  listFinances,
+  createFinance,
+  updateFinance,
+  deleteFinance,
+  type FinanceDto,
+  type FinanceCreateRequest,
+  type FinanceUpdateRequest,
+} from "../../api/financeApi";
 
 /* ===== Utils ===== */
 function cx(...parts: Array<string | false | undefined>) {
@@ -37,6 +19,7 @@ function cx(...parts: Array<string | false | undefined>) {
 const fmtVND = (n: number) =>
   (isNaN(n) ? "0" : n.toLocaleString("vi-VN")) + "₫";
 
+// Phân trang kiểu Users
 function buildPageList(total: number, current: number) {
   const pages: (number | string)[] = [];
   const window = 1;
@@ -49,26 +32,48 @@ function buildPageList(total: number, current: number) {
       let i = Math.max(2, current - window);
       i <= Math.min(total - 1, current + window);
       i++
-    )
+    ) {
       pages.push(i);
+    }
     if (current + window < total - 1) pages.push("…");
     pages.push(total);
   }
   return pages;
 }
 
-/* ===== Modal ===== */
-function Modal({
-  title,
+/* ===== Modal (Create/Edit) ===== */
+function TxModal({
+  initial,
+  onSave,
   onClose,
-  children,
+  title,
 }: {
-  title: string;
+  initial?: Partial<FinanceDto>;
+  onSave: (payload: FinanceCreateRequest | FinanceUpdateRequest) => void;
   onClose: () => void;
-  children: React.ReactNode;
+  title: string;
 }) {
+  // Map "Tên khoản" = description của API theo yêu cầu search tên
+  const [desc, setDesc] = React.useState<string>(initial?.description ?? "");
+  const [type, setType] = React.useState<"Thu" | "Chi">(initial?.type ?? "Thu");
+  const [amountStr, setAmountStr] = React.useState<string>(() => {
+    const v = initial?.amount;
+    if (v == null) return "";
+    const num = typeof v === "string" ? Number(v) : v;
+    return String(num ?? "");
+  });
+  const [date, setDate] = React.useState<string>(initial?.finance_date ?? "");
+
+  const parsedAmount = Number(String(amountStr).replaceAll(",", ""));
+  const canSave =
+    type !== undefined &&
+    date !== "" &&
+    !Number.isNaN(parsedAmount) &&
+    parsedAmount > 0 &&
+    (desc || "").trim() !== "";
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title">{title}</div>
@@ -76,124 +81,68 @@ function Modal({
             ✕
           </button>
         </div>
-        <div className="modal-body">{children}</div>
-      </div>
-    </div>
-  );
-}
 
-/* ===== Reusable Create/Edit Modal (no tabs) ===== */
-function TxModal({
-  initial,
-  onSave,
-  onClose,
-  title,
-}: {
-  initial?: Partial<Tx>;
-  onSave: (tx: Tx) => void;
-  onClose: () => void;
-  title: string;
-}) {
-  const [name, setName] = React.useState<string>(initial?.name ?? "");
-  const [type, setType] = React.useState<Tx["type"]>(initial?.type ?? "Thu");
-  // dùng chuỗi cho input số để tránh lỗi khi gõ/clear
-  const [amountStr, setAmountStr] = React.useState<string>(
-    initial?.amount != null ? String(initial.amount) : ""
-  );
-  const [date, setDate] = React.useState<string>(initial?.date ?? "");
-  const [desc, setDesc] = React.useState<string>(initial?.desc ?? "");
+        <div className="modal-body">
+          <div className="form">
+            <div className="row">
+              <div className="fi">
+                <label>Tên khoản</label>
+                <input
+                  placeholder="VD: Thu tiền họ nhà A"
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                />
+              </div>
+              <div className="fi">
+                <label>Loại</label>
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value as "Thu" | "Chi")}
+                >
+                  <option value="Thu">Thu</option>
+                  <option value="Chi">Chi</option>
+                </select>
+              </div>
+            </div>
 
-  const parsedAmount = Number(amountStr.replaceAll(",", ""));
-  const canSave =
-    name.trim() !== "" &&
-    type !== undefined &&
-    date !== "" &&
-    !Number.isNaN(parsedAmount) &&
-    parsedAmount > 0;
-
-  return (
-    <Modal title={title} onClose={onClose}>
-      <div className="form">
-        <div className="fi">
-          <label>Tên khoản</label>
-          <div className="control">
-            <input
-              placeholder="VD: Tiền ủng hộ"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="row">
+              <div className="fi">
+                <label>Số tiền (VND)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={amountStr}
+                  onChange={(e) => setAmountStr(e.target.value)}
+                />
+              </div>
+              <div className="fi">
+                <label>Ngày</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="fi">
-          <label>Loại</label>
-          <div className="control">
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as Tx["type"])}
-            >
-              <option value="Thu">Thu</option>
-              <option value="Chi">Chi</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="fi">
-          <label>Số tiền (VND)</label>
-          <div className="control">
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              inputMode="numeric"
-              placeholder="0"
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="fi">
-          <label>Ngày</label>
-          <div className="control">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="fi" style={{ gridColumn: "1 / -1" }}>
-          <label>Mô tả</label>
-          <div className="control">
-            <textarea
-              rows={3}
-              placeholder="Nhập mô tả…"
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div
-          className="actions actions--center actions--even"
-          style={{ gridColumn: "1 / -1" }}
-        >
+        {/* Footer cố định: nút căn giữa, gần đáy */}
+        <div className="modal-footer">
           <button
             className="button button--primary"
             disabled={!canSave}
-            onClick={() => {
-              const tx: Tx = {
-                id: initial?.id ?? `t_${Date.now()}`,
-                name: name.trim(),
+            onClick={() =>
+              onSave({
                 type,
+                finance_date: date,
                 amount: Math.max(0, Math.floor(parsedAmount)),
-                date,
-                desc: (desc || "").trim(),
-              };
-              onSave(tx); // Thêm/cập nhật và đóng
-            }}
+                description: desc.trim(),
+              })
+            }
           >
             Lưu
           </button>
@@ -202,59 +151,102 @@ function TxModal({
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
 /* ===== Page ===== */
-type SortKey = "name" | "type" | "amount" | "date" | "desc";
+type SortKey = "name" | "type" | "amount" | "date";
 type SortDir = "asc" | "desc";
 
 export default function Finance() {
-  const [list, setList] = React.useState<Tx[]>(seed);
-  const [q, setQ] = React.useState("");
+  // Server paging state
+  const [list, setList] = React.useState<FinanceDto[]>([]);
+  const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const LIMIT = 10;
+
+  // Filters
+  const [q, setQ] = React.useState(""); // search theo tên (description)
+  const [typeFilter, setTypeFilter] = React.useState<"" | "Thu" | "Chi">(""); // selectbox
+
+  // Sort (client-side trên trang hiện tại)
   const [sortKey, setSortKey] = React.useState<SortKey>("date");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
+
+  // UI modals
   const [showAdd, setShowAdd] = React.useState(false);
-  const [editTx, setEditTx] = React.useState<Tx | null>(null);
+  const [editTx, setEditTx] = React.useState<FinanceDto | null>(null);
 
-  const PAGE_SIZE = 10;
+  // Loading / error
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const filtered = React.useMemo(() => {
-    const kw = q.trim().toLowerCase();
-    if (!kw) return list;
-    return list.filter((t) =>
-      `${t.name} ${t.desc} ${t.type} ${t.amount} ${t.date}`
-        .toLowerCase()
-        .includes(kw)
-    );
-  }, [list, q]);
+  const fetchList = React.useCallback(
+    async (pageNum: number, keyword: string, typeSel: "" | "Thu" | "Chi") => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await listFinances({
+          page: pageNum,
+          limit: LIMIT,
+          search: keyword,
+          type: typeSel,
+        });
+        setList(res.data.data);
+        setTotal(res.data.total);
+        setTotalPages(res.data.totalPages);
+      } catch (e: any) {
+        setError(e?.message || "Lỗi tải dữ liệu");
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
+  // Debounce search
+  const debRef = React.useRef<number | undefined>(undefined);
+  const triggerSearch = React.useCallback(
+    (kw: string, typeSel: "" | "Thu" | "Chi") => {
+      if (debRef.current) window.clearTimeout(debRef.current);
+      debRef.current = window.setTimeout(() => {
+        setPage(1);
+        fetchList(1, kw, typeSel);
+      }, 400);
+    },
+    [fetchList]
+  );
+
+  React.useEffect(() => {
+    fetchList(page, q, typeFilter);
+  }, [page]);
+  React.useEffect(() => {
+    triggerSearch(q, typeFilter);
+  }, [q, typeFilter, triggerSearch]);
+
+  // Sorting (client-side)
   const sorted = React.useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...list];
     arr.sort((a, b) => {
       let av: any, bv: any;
       switch (sortKey) {
         case "name":
-          av = a.name || "";
-          bv = b.name || "";
+          av = a.description || "";
+          bv = b.description || "";
           break;
         case "type":
           av = a.type;
           bv = b.type;
           break;
         case "amount":
-          av = a.amount;
-          bv = b.amount;
+          av = Number(a.amount);
+          bv = Number(b.amount);
           break;
         case "date":
-          av = a.date || "";
-          bv = b.date || "";
-          break;
-        case "desc":
-          av = a.desc || "";
-          bv = b.desc || "";
+          av = a.finance_date || "";
+          bv = b.finance_date || "";
           break;
       }
       const cmp =
@@ -264,21 +256,10 @@ export default function Finance() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [filtered, sortKey, sortDir]);
+  }, [list, sortKey, sortDir]);
 
-  React.useEffect(() => {
-    setPage(1);
-  }, [q, sortKey, sortDir]);
-
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const current = Math.min(page, totalPages);
-  const start = (current - 1) * PAGE_SIZE;
-  const paginated = sorted.slice(start, start + PAGE_SIZE);
-
-  const isNoData = total === 0; // ẩn header khi không có dữ liệu (như cũ)
-  const isSearchEmpty = q.trim() !== "" && total === 0;
-
+  const isNoData = total === 0;
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
       setSortKey(key);
@@ -288,21 +269,32 @@ export default function Finance() {
     }
   };
 
-  const addTx = (tx: Tx) => {
-    setList((prev) => [tx, ...prev]);
-    setShowAdd(false); // đóng popup sau khi Lưu
+  // CRUD handlers
+  const onCreate = async (payload: FinanceCreateRequest) => {
+    await createFinance(payload);
+    setShowAdd(false);
+    setPage(1);
+    fetchList(1, q, typeFilter);
   };
-  const updateTx = (tx: Tx) => {
-    setList((prev) => prev.map((x) => (x.id === tx.id ? tx : x)));
-    setEditTx(null); // đóng popup sửa
+  const onUpdate = async (id: string, payload: FinanceUpdateRequest) => {
+    await updateFinance(id, payload);
+    setEditTx(null);
+    fetchList(page, q, typeFilter);
   };
-  const remove = (id: string) =>
-    setList((prev) => prev.filter((x) => x.id !== id));
+  const onDelete = async (id: string) => {
+    if (!confirm("Bạn chắc chắn muốn xoá khoản thu/chi này?")) return;
+    await deleteFinance(id);
+    const newTotal = Math.max(0, total - 1);
+    const newTotalPages = Math.max(1, Math.ceil(newTotal / LIMIT));
+    const newPage = Math.min(page, newTotalPages);
+    setPage(newPage);
+    fetchList(newPage, q, typeFilter);
+  };
 
   return (
     <div className="finance-wrap">
-      <div className="card">
-        {/* Title */}
+      <div className="acard shadow-card">
+        {/* Title + counter giống Users */}
         <div className="page-head">
           <div className="page-title">Quản lý thu chi</div>
         </div>
@@ -316,30 +308,51 @@ export default function Finance() {
             <input
               id="searchInput"
               className="search"
-              placeholder="Tìm theo tên khoản, mô tả, loại, số tiền…"
+              placeholder="Tìm theo tên khoản…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <div className="toolbar-right">
+
+          {/* label + select cạnh ô tìm kiếm, độ rộng vừa đủ */}
+          <div className="type-group">
+            <label htmlFor="typeSelect" className="type-label">
+              Chọn loại
+            </label>
+            <select
+              id="typeSelect"
+              className="type-select"
+              value={typeFilter}
+              onChange={(e) =>
+                setTypeFilter(e.target.value as "" | "Thu" | "Chi")
+              }
+              title="Lọc theo loại"
+            >
+              <option value="">Tất cả</option>
+              <option value="Thu">Thu</option>
+              <option value="Chi">Chi</option>
+            </select>
+          </div>
+
+          <div style={{ marginLeft: "auto" }}>
             <button
-              className="button button--primary add-btn"
+              className="button button--primary"
               onClick={() => setShowAdd(true)}
             >
               + Thêm khoản thu/chi
             </button>
           </div>
         </div>
-        <div className="count">Tìm thấy {total} kết quả</div>
-        <div className="thead">Kết quả tìm kiếm</div>
 
-        {isSearchEmpty && (
-          <div className="search-empty-banner">Không tìm thấy kết quả</div>
-        )}
+        {error && <div className="search-empty-banner">{error}</div>}
+        {loading && <div className="count">Đang tải…</div>}
 
+        <div className="thead">Kết quả</div>
+        <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+          Trang {totalPages ? current : 0}/{totalPages} • Tổng {total} bản ghi
+        </div>
         {/* List */}
         <div className="list" role="list">
-          {/* Header with sort arrows (ẩn khi không có dữ liệu) */}
           {!isNoData && (
             <div
               className="finance-tr tr--head"
@@ -430,70 +443,48 @@ export default function Finance() {
                   </i>
                 </span>
               </div>
-              <div className="th" onClick={() => toggleSort("desc")}>
-                <span>Mô tả</span>
-                <span className="sort-icons">
-                  <i
-                    className={cx(
-                      "up",
-                      sortKey === "desc" && sortDir === "asc" && "on"
-                    )}
-                  >
-                    ▲
-                  </i>
-                  <i
-                    className={cx(
-                      "down",
-                      sortKey === "desc" && sortDir === "desc" && "on"
-                    )}
-                  >
-                    ▼
-                  </i>
-                </span>
-              </div>
-              {/* <div style={{ textAlign: "right" }}>Thao tác</div> */}
+              <div style={{ textAlign: "right" }}>Thao tác</div>
             </div>
           )}
 
-          {paginated.map((t) => (
-            <div
-              key={t.id}
-              className={cx(
-                "finance-tr",
-                t.type === "Thu" && "tr--income",
-                t.type === "Chi" && "tr--expense"
-              )}
-              role="listitem"
-              title="Sửa khoản"
-              onClick={() => setEditTx(t)} // click dòng để sửa
-            >
-              <div className="td td--name">{t.name}</div>
-              <div className="td td--type">{t.type}</div>
-              <div className="td td--amount">{fmtVND(t.amount)}</div>
-              <div className="td td--date">{t.date || "-"}</div>
-              <div className="td td--desc">{t.desc}</div>
+          {sorted.map((t) => {
+            const amountNum = Number(t.amount);
+            return (
               <div
-                className="td td--actions"
-                style={{
-                  textAlign: "right",
-                  display: "flex",
-                  gap: 8,
-                  justifyContent: "flex-end",
-                }}
-                onClick={(e) => e.stopPropagation()}
+                key={t.id}
+                className={cx(
+                  "finance-tr",
+                  t.type === "Thu" && "tr--income",
+                  t.type === "Chi" && "tr--expense"
+                )}
+                role="listitem"
               >
-                <button className="button" onClick={() => setEditTx(t)}>
-                  Sửa
-                </button>
-                <button
-                  className="button button--danger"
-                  onClick={() => remove(t.id)}
+                <div className="td td--name">{t.description ?? "-"}</div>
+                <div className="td td--type">{t.type}</div>
+                <div className="td td--amount">{fmtVND(amountNum)}</div>
+                <div className="td td--date">{t.finance_date || "-"}</div>
+                <div
+                  className="td td--actions"
+                  style={{
+                    textAlign: "right",
+                    display: "flex",
+                    gap: 8,
+                    justifyContent: "flex-end",
+                  }}
                 >
-                  Xóa
-                </button>
+                  <button className="button" onClick={() => setEditTx(t)}>
+                    Sửa
+                  </button>
+                  <button
+                    className="button button--danger"
+                    onClick={() => onDelete(t.id)}
+                  >
+                    Xóa
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Pagination (giống Users) */}
@@ -557,7 +548,7 @@ export default function Finance() {
       {showAdd && (
         <TxModal
           title="Thêm khoản thu/chi"
-          onSave={addTx}
+          onSave={onCreate}
           onClose={() => setShowAdd(false)}
         />
       )}
@@ -565,7 +556,7 @@ export default function Finance() {
         <TxModal
           title="Sửa khoản thu/chi"
           initial={editTx}
-          onSave={updateTx}
+          onSave={(payload) => onUpdate(editTx.id, payload)}
           onClose={() => setEditTx(null)}
         />
       )}

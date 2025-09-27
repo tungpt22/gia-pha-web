@@ -16,6 +16,9 @@
 /* ===== Title ===== */
 .page-head {
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .page-title {
   font-size: 26px;
@@ -147,6 +150,23 @@
   font-weight: 600;
 }
 
+/* Sortable headers */
+.th--sortable {
+  cursor: pointer;
+}
+.sort-icon {
+  font-size: 11px;
+  opacity: 0.35;
+  margin-left: 4px;
+}
+.sort-icon--asc {
+  opacity: 1;
+}
+.sort-icon--desc {
+  opacity: 1;
+  transform: rotate(180deg);
+}
+
 /* ===== Buttons & Links ===== */
 .button {
   border: 1px solid #e5e7eb;
@@ -175,13 +195,14 @@
   cursor: pointer;
 }
 
-/* ===== Pagination ===== */
+/* ===== Pagination (giống Users) ===== */
 .pagination {
   margin-top: 10px;
   display: flex;
   gap: 6px;
   justify-content: center;
   align-items: center;
+  flex-wrap: wrap;
 }
 .page-btn {
   border: 1px solid #e5e7eb;
@@ -198,6 +219,11 @@
 .page-ellipsis {
   padding: 0 4px;
   color: #6b7280;
+}
+.page-btn--active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
 }
 
 /* ===== Modal (form) ===== */
@@ -289,7 +315,7 @@
   color: #6b7280;
 }
 
-/* ===== Lightbox xem ảnh (mới) ===== */
+/* ===== Lightbox xem ảnh ===== */
 .lightbox-backdrop {
   position: fixed;
   inset: 0;
@@ -313,10 +339,10 @@
   max-height: 92vh;
   width: auto;
   height: auto;
-  object-fit: contain; /* giữ đúng tỉ lệ ảnh */
+  object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-  background: #111; /* tránh nền trắng nhấp nháy khi load */
+  background: #111;
 }
 .lightbox-nav {
   position: absolute;

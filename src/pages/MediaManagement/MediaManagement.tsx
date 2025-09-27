@@ -13,7 +13,7 @@ import {
   deletePhoto,
   type AlbumDto,
   type PhotoDto,
-} from "../../api/albumApi.ts";
+} from "../../api/albumApi";
 
 // ===== Helpers =====
 function cx(...parts: Array<string | false | undefined>) {
@@ -31,6 +31,53 @@ function useDebouncedCallback<T extends (...args: any[]) => void>(
     },
     [fn, ms]
   ) as T;
+}
+
+// MẪU USERS: tạo danh sách số trang với dấu …
+function buildPageList(total: number, current: number) {
+  const pages: (number | string)[] = [];
+  const window = 1;
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current - window > 2) pages.push("…");
+    for (
+      let i = Math.max(2, current - window);
+      i <= Math.min(total - 1, current + window);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (current + window < total - 1) pages.push("…");
+    pages.push(total);
+  }
+  return pages;
+}
+
+// So sánh/ sort
+type Dir = "asc" | "desc";
+function comparePrimitive(a: any, b: any, dir: Dir) {
+  const res = a < b ? -1 : a > b ? 1 : 0;
+  return dir === "asc" ? res : -res;
+}
+function compareByKey<T extends Record<string, any>>(
+  a: T,
+  b: T,
+  key: string,
+  dir: Dir,
+  isDate?: boolean
+) {
+  const va = a?.[key];
+  const vb = b?.[key];
+  if (isDate) {
+    const ta = va ? new Date(va).getTime() : 0;
+    const tb = vb ? new Date(vb).getTime() : 0;
+    return comparePrimitive(ta, tb, dir);
+  }
+  const sa = (va ?? "").toString().toLowerCase();
+  const sb = (vb ?? "").toString().toLowerCase();
+  return comparePrimitive(sa, sb, dir);
 }
 
 // ===== Base Modal =====
@@ -250,7 +297,7 @@ function EditPhotoModal({
   );
 }
 
-/** ===== Lightbox xem ảnh (mới thêm theo yêu cầu) ===== */
+/** ===== Lightbox xem ảnh ===== */
 function Lightbox({
   albumId,
   photos,
@@ -267,9 +314,7 @@ function Lightbox({
   onNext: () => void;
 }) {
   const photo = photos[index];
-  // Đường dẫn ảnh theo yêu cầu: uploads\albums\{id album}\{id ảnh}
-  // Dùng slash forward để trình duyệt load static đúng.
-  const src = `/uploads/albums/${albumId}/${photo.id}`;
+  const src = `/uploads/albums/${albumId}/${photo.id}`; // đường dẫn theo yêu cầu (dùng / cho web)
 
   return (
     <div className="lightbox-backdrop" onClick={onClose}>
@@ -304,9 +349,11 @@ function Lightbox({
 }
 
 type Page = { name: "albums" } | { name: "photos"; album: AlbumDto };
+type AlbSortKey = "name" | "description" | "created_dt" | "updated_dt";
+type PhSortKey = "name" | "description" | "created_dt" | "updated_dt";
 
 export default function MediaManagement() {
-  // Trang mặc định là Albums (đã bỏ select “Chọn loại”/“Album”)
+  // Trang mặc định là Albums
   const [page, setPage] = React.useState<Page>({ name: "albums" });
 
   // ===== Albums state =====
@@ -318,6 +365,25 @@ export default function MediaManagement() {
   const [q, setQ] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [albSort, setAlbSort] = React.useState<{
+    key: AlbSortKey | null;
+    dir: Dir;
+  }>({ key: null, dir: "asc" });
+
+  const applyAlbumSort = React.useCallback(
+    (data: AlbumDto[]) => {
+      if (!albSort.key) return data;
+      const isDate =
+        albSort.key === "created_dt" || albSort.key === "updated_dt";
+      const withIndex = data.map((v, i) => ({ v, i }));
+      withIndex.sort((a, b) => {
+        const c = compareByKey(a.v, b.v, albSort.key!, albSort.dir, isDate);
+        return c !== 0 ? c : a.i - b.i; // stable
+      });
+      return withIndex.map((x) => x.v);
+    },
+    [albSort]
+  );
 
   const fetchAlbums = React.useCallback(
     async (pageNum: number, keyword: string) => {
@@ -329,7 +395,8 @@ export default function MediaManagement() {
           limit: albLimit,
           search: keyword,
         });
-        setAlbums(res.data.data);
+        const sorted = applyAlbumSort(res.data.data);
+        setAlbums(sorted);
         setAlbTotal(res.data.total);
         setAlbTotalPages(res.data.totalPages);
       } catch (e: any) {
@@ -338,7 +405,7 @@ export default function MediaManagement() {
         setLoading(false);
       }
     },
-    [albLimit]
+    [albLimit, applyAlbumSort]
   );
 
   // Debounce tìm kiếm
@@ -354,6 +421,19 @@ export default function MediaManagement() {
     debouncedSearch(q);
   }, [q]); // đổi từ khoá
 
+  // Khi đổi sort album -> áp lại sort hiện thời trên data đang hiển thị (không gọi lại API)
+  React.useEffect(() => {
+    setAlbums((prev) => applyAlbumSort([...prev]));
+  }, [albSort, applyAlbumSort]);
+
+  const toggleAlbSort = (key: AlbSortKey) => {
+    setAlbSort((s) =>
+      s.key === key
+        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" }
+    );
+  };
+
   const openPhotos = (album: AlbumDto) => setPage({ name: "photos", album });
 
   // ===== Photos state =====
@@ -362,7 +442,12 @@ export default function MediaManagement() {
   const [phPage, setPhPage] = React.useState(1);
   const [phLimit] = React.useState(10);
   const [phTotalPages, setPhTotalPages] = React.useState(1);
+  const [phTotalItems, setPhTotalItems] = React.useState(0); // tổng bản ghi (client-side)
   const [phQ, setPhQ] = React.useState("");
+  const [phSort, setPhSort] = React.useState<{
+    key: PhSortKey | null;
+    dir: Dir;
+  }>({ key: null, dir: "asc" });
   const [showUpload, setShowUpload] = React.useState(false);
   const [editingPhoto, setEditingPhoto] = React.useState<PhotoDto | null>(null);
 
@@ -371,8 +456,9 @@ export default function MediaManagement() {
     setAllPhotos(res.data.data);
   }, []);
 
-  // Lọc + phân trang ảnh (client-side vì API list ảnh chưa có page/limit/search)
+  // Lọc + sort + phân trang ảnh (client-side)
   const repaginatePhotos = React.useCallback(() => {
+    // filter
     const filtered = phQ.trim()
       ? allPhotos.filter((p) =>
           `${p.name} ${p.description ?? ""}`
@@ -380,20 +466,38 @@ export default function MediaManagement() {
             .includes(phQ.trim().toLowerCase())
         )
       : allPhotos;
-    const totalPages = Math.max(1, Math.ceil(filtered.length / phLimit));
+
+    // sort
+    let sorted = filtered;
+    if (phSort.key) {
+      const isDate = phSort.key === "created_dt" || phSort.key === "updated_dt";
+      const withIndex = filtered.map((v, i) => ({ v, i }));
+      withIndex.sort((a, b) => {
+        const c = compareByKey(a.v, b.v, phSort.key!, phSort.dir, isDate);
+        return c !== 0 ? c : a.i - b.i; // stable
+      });
+      sorted = withIndex.map((x) => x.v);
+    }
+
+    // paginate + tổng
+    const totalPages = Math.max(1, Math.ceil(sorted.length / phLimit));
     const safePage = Math.min(phPage, totalPages);
     const start = (safePage - 1) * phLimit;
+    setPhTotalItems(sorted.length);
     setPhTotalPages(totalPages);
     setPhPage(safePage);
-    setPhotos(filtered.slice(start, start + phLimit));
-  }, [allPhotos, phQ, phPage, phLimit]);
+    setPhotos(sorted.slice(start, start + phLimit));
+  }, [allPhotos, phQ, phPage, phLimit, phSort]);
 
   React.useEffect(() => {
     if (page.name === "photos") loadPhotos(page.album.id);
   }, [page, loadPhotos]);
   React.useEffect(() => {
     if (page.name === "photos") repaginatePhotos();
-  }, [page, allPhotos, phPage, phQ, repaginatePhotos]);
+  }, [page, allPhotos, phPage, phQ, phSort, repaginatePhotos]);
+  React.useEffect(() => {
+    setPhPage(1);
+  }, [phQ, phSort]); // khi đổi tìm kiếm / sắp xếp: về trang 1
 
   // ===== Handlers: Albums =====
   const [showAddAlbum, setShowAddAlbum] = React.useState(false);
@@ -433,8 +537,7 @@ export default function MediaManagement() {
     repaginatePhotos();
   };
 
-  // ===== Lightbox state (mới) =====
-  // Duyệt trong danh sách ảnh đang hiển thị (photos) để không ảnh hưởng phân trang hiện tại
+  // ===== Lightbox state =====
   const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
   const openLightbox = (idx: number) => setLightboxIndex(idx);
   const closeLightbox = () => setLightboxIndex(null);
@@ -446,6 +549,15 @@ export default function MediaManagement() {
     );
 
   // ===== Render =====
+  const renderSortIcon = (active: boolean, dir: Dir) => (
+    <span
+      className={cx("sort-icon", active && `sort-icon--${dir}`)}
+      aria-hidden
+    >
+      ▴▾
+    </span>
+  );
+
   const ToolbarAlbums = (
     <div className="toolbar">
       <div className="search-group">
@@ -460,7 +572,6 @@ export default function MediaManagement() {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
-      {/* ĐÃ BỎ: label & selectbox Chọn loại + Album */}
       <button
         className="button add-album-button"
         onClick={() => setShowAddAlbum(true)}
@@ -487,7 +598,6 @@ export default function MediaManagement() {
           value={phQ}
           onChange={(e) => {
             setPhQ(e.target.value);
-            setPhPage(1);
           }}
         />
       </div>
@@ -506,21 +616,45 @@ export default function MediaManagement() {
       role="presentation"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => toggleAlbSort("name")}
+      >
         <span>Tên</span>
+        {renderSortIcon(albSort.key === "name", albSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => toggleAlbSort("description")}
+      >
         <span>Mô tả</span>
+        {renderSortIcon(albSort.key === "description", albSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => toggleAlbSort("created_dt")}
+      >
         <span>Ngày tạo</span>
+        {renderSortIcon(albSort.key === "created_dt", albSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => toggleAlbSort("updated_dt")}
+      >
         <span>Ngày cập nhật</span>
+        {renderSortIcon(albSort.key === "updated_dt", albSort.dir)}
       </div>
       <div style={{ textAlign: "right" }}>Thao tác</div>
     </div>
   );
+
+  const togglePhSort = (key: PhSortKey) => {
+    setPhSort((s) =>
+      s.key === key
+        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" }
+    );
+  };
 
   const PhotosHeader = (
     <div
@@ -528,19 +662,140 @@ export default function MediaManagement() {
       role="presentation"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => togglePhSort("name")}
+      >
         <span>Tên ảnh</span>
+        {renderSortIcon(phSort.key === "name", phSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => togglePhSort("description")}
+      >
         <span>Mô tả</span>
+        {renderSortIcon(phSort.key === "description", phSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => togglePhSort("created_dt")}
+      >
         <span>Ngày tạo</span>
+        {renderSortIcon(phSort.key === "created_dt", phSort.dir)}
       </div>
-      <div className="th">
+      <div
+        className={cx("th", "th--sortable")}
+        onClick={() => togglePhSort("updated_dt")}
+      >
         <span>Ngày cập nhật</span>
+        {renderSortIcon(phSort.key === "updated_dt", phSort.dir)}
       </div>
       <div style={{ textAlign: "right" }}>Thao tác</div>
+    </div>
+  );
+
+  // ===== Pagination components (giống Users) =====
+  const AlbPagination = (
+    <div className="pagination">
+      <button
+        className="page-btn"
+        disabled={albPage <= 1}
+        onClick={() => setAlbPage(1)}
+        title="Trang đầu"
+      >
+        «
+      </button>
+      <button
+        className="page-btn"
+        disabled={albPage <= 1}
+        onClick={() => setAlbPage((p) => Math.max(1, p - 1))}
+        title="Trang trước"
+      >
+        ‹
+      </button>
+      {buildPageList(albTotalPages, albPage).map((p, i) =>
+        typeof p === "number" ? (
+          <button
+            key={i}
+            className={cx("page-btn", p === albPage && "page-btn--active")}
+            onClick={() => setAlbPage(p)}
+          >
+            {p}
+          </button>
+        ) : (
+          <span key={i} className="page-ellipsis">
+            {p}
+          </span>
+        )
+      )}
+      <button
+        className="page-btn"
+        disabled={albPage >= albTotalPages}
+        onClick={() => setAlbPage((p) => Math.min(albTotalPages, p + 1))}
+        title="Trang sau"
+      >
+        ›
+      </button>
+      <button
+        className="page-btn"
+        disabled={albPage >= albTotalPages}
+        onClick={() => setAlbPage(albTotalPages)}
+        title="Trang cuối"
+      >
+        »
+      </button>
+    </div>
+  );
+
+  const PhPagination = (
+    <div className="pagination">
+      <button
+        className="page-btn"
+        disabled={phPage <= 1}
+        onClick={() => setPhPage(1)}
+        title="Trang đầu"
+      >
+        «
+      </button>
+      <button
+        className="page-btn"
+        disabled={phPage <= 1}
+        onClick={() => setPhPage((p) => Math.max(1, p - 1))}
+        title="Trang trước"
+      >
+        ‹
+      </button>
+      {buildPageList(phTotalPages, phPage).map((p, i) =>
+        typeof p === "number" ? (
+          <button
+            key={i}
+            className={cx("page-btn", p === phPage && "page-btn--active")}
+            onClick={() => setPhPage(p)}
+          >
+            {p}
+          </button>
+        ) : (
+          <span key={i} className="page-ellipsis">
+            {p}
+          </span>
+        )
+      )}
+      <button
+        className="page-btn"
+        disabled={phPage >= phTotalPages}
+        onClick={() => setPhPage((p) => Math.min(phTotalPages, p + 1))}
+        title="Trang sau"
+      >
+        ›
+      </button>
+      <button
+        className="page-btn"
+        disabled={phPage >= phTotalPages}
+        onClick={() => setPhPage(phTotalPages)}
+        title="Trang cuối"
+      >
+        »
+      </button>
     </div>
   );
 
@@ -551,15 +806,20 @@ export default function MediaManagement() {
           <div className="page-title">Quản lý album & hình ảnh</div>
         </div>
 
-        {page.name === "albums" ? ToolbarAlbums : ToolbarPhotos(page.album)}
-
-        {page.name === "albums" && (
+        {page.name === "albums" ? (
           <>
             {error && <div className="search-empty-banner">{error}</div>}
             {loading && <div className="count">Đang tải…</div>}
-            <div className="count">Tìm thấy {albTotal} kết quả</div>
+
+            {ToolbarAlbums}
 
             <div className="thead">Danh sách album</div>
+            <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+              <>
+                Trang {albTotalPages ? albPage : 0}/{albTotalPages} • Tổng{" "}
+                {albTotal} bản ghi
+              </>
+            </div>
             <div className="list" role="list">
               {AlbHeader}
               {albums.map((a) => (
@@ -613,51 +873,19 @@ export default function MediaManagement() {
             </div>
 
             {/* Pagination (Albums) */}
-            <div className="pagination">
-              <button
-                className="page-btn"
-                disabled={albPage <= 1}
-                onClick={() => setAlbPage(1)}
-                title="Trang đầu"
-              >
-                «
-              </button>
-              <button
-                className="page-btn"
-                disabled={albPage <= 1}
-                onClick={() => setAlbPage((p) => Math.max(1, p - 1))}
-                title="Trang trước"
-              >
-                ‹
-              </button>
-              <span className="page-ellipsis">
-                Trang {albPage}/{albTotalPages}
-              </span>
-              <button
-                className="page-btn"
-                disabled={albPage >= albTotalPages}
-                onClick={() =>
-                  setAlbPage((p) => Math.min(albTotalPages, p + 1))
-                }
-                title="Trang sau"
-              >
-                ›
-              </button>
-              <button
-                className="page-btn"
-                disabled={albPage >= albTotalPages}
-                onClick={() => setAlbPage(albTotalPages)}
-                title="Trang cuối"
-              >
-                »
-              </button>
-            </div>
+            {AlbPagination}
           </>
-        )}
-
-        {page.name === "photos" && (
+        ) : (
           <>
+            {ToolbarPhotos(page.album)}
+
             <div className="thead">Danh sách hình ảnh</div>
+            <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+              <>
+                Trang {phTotalPages ? phPage : 0}/{phTotalPages} • Tổng{" "}
+                {phTotalItems} bản ghi
+              </>
+            </div>
             <div className="list" role="list">
               {PhotosHeader}
               {photos.map((p, idx) => (
@@ -667,7 +895,6 @@ export default function MediaManagement() {
                   role="listitem"
                 >
                   <div className="td td--name">
-                    {/* MỚI: tên ảnh là link mở lightbox */}
                     <a
                       href="#"
                       className="link"
@@ -712,43 +939,7 @@ export default function MediaManagement() {
             </div>
 
             {/* Pagination (Photos, client-side) */}
-            <div className="pagination">
-              <button
-                className="page-btn"
-                disabled={phPage <= 1}
-                onClick={() => setPhPage(1)}
-                title="Trang đầu"
-              >
-                «
-              </button>
-              <button
-                className="page-btn"
-                disabled={phPage <= 1}
-                onClick={() => setPhPage((p) => Math.max(1, p - 1))}
-                title="Trang trước"
-              >
-                ‹
-              </button>
-              <span className="page-ellipsis">
-                Trang {phPage}/{phTotalPages}
-              </span>
-              <button
-                className="page-btn"
-                disabled={phPage >= phTotalPages}
-                onClick={() => setPhPage((p) => Math.min(phTotalPages, p + 1))}
-                title="Trang sau"
-              >
-                ›
-              </button>
-              <button
-                className="page-btn"
-                disabled={phPage >= phTotalPages}
-                onClick={() => setPhPage(phTotalPages)}
-                title="Trang cuối"
-              >
-                »
-              </button>
-            </div>
+            {PhPagination}
           </>
         )}
       </div>
@@ -794,7 +985,7 @@ export default function MediaManagement() {
         />
       )}
 
-      {/* MỚI: Lightbox xem ảnh */}
+      {/* Lightbox xem ảnh */}
       {page.name === "photos" &&
         lightboxIndex !== null &&
         photos.length > 0 && (

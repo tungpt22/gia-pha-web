@@ -152,6 +152,23 @@ export async function getFinance(id: string, access_token?: string) {
   return res.json() as Promise<{ message: string; data: FinanceDto }>;
 }
 
+export async function exportFinancesExcel(params: {
+  search?: string;
+  type?: "" | "Thu" | "Chi";
+}) {
+  const url = new URL(`${API_BASE}/finances/export`);
+  url.searchParams.set("search", params.search || "");
+  if (params.type) url.searchParams.set("type", params.type);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { ...authHeaders() },
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.blob(); // .xlsx
+}
+
 const financeApi = {
   listFinances,
   createFinance,

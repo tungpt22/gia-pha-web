@@ -13,7 +13,7 @@ import {
   deletePhoto,
   type AlbumDto,
   type PhotoDto,
-} from "../../api/albumApi";
+} from "../../api/albumsApi";
 
 // ===== Helpers =====
 function cx(...parts: Array<string | false | undefined>) {
@@ -32,30 +32,24 @@ function useDebouncedCallback<T extends (...args: any[]) => void>(
     [fn, ms]
   ) as T;
 }
-
-// MẪU USERS: tạo danh sách số trang với dấu …
 function buildPageList(total: number, current: number) {
   const pages: (number | string)[] = [];
   const window = 1;
-  if (total <= 7) {
-    for (let i = 1; i <= total; i++) pages.push(i);
-  } else {
+  if (total <= 7) for (let i = 1; i <= total; i++) pages.push(i);
+  else {
     pages.push(1);
     if (current - window > 2) pages.push("…");
     for (
       let i = Math.max(2, current - window);
       i <= Math.min(total - 1, current + window);
       i++
-    ) {
+    )
       pages.push(i);
-    }
     if (current + window < total - 1) pages.push("…");
     pages.push(total);
   }
   return pages;
 }
-
-// So sánh/ sort
 type Dir = "asc" | "desc";
 function comparePrimitive(a: any, b: any, dir: Dir) {
   const res = a < b ? -1 : a > b ? 1 : 0;
@@ -68,16 +62,31 @@ function compareByKey<T extends Record<string, any>>(
   dir: Dir,
   isDate?: boolean
 ) {
-  const va = a?.[key];
-  const vb = b?.[key];
-  if (isDate) {
-    const ta = va ? new Date(va).getTime() : 0;
-    const tb = vb ? new Date(vb).getTime() : 0;
-    return comparePrimitive(ta, tb, dir);
-  }
-  const sa = (va ?? "").toString().toLowerCase();
-  const sb = (vb ?? "").toString().toLowerCase();
-  return comparePrimitive(sa, sb, dir);
+  const va = a?.[key],
+    vb = b?.[key];
+  if (isDate)
+    return comparePrimitive(
+      va ? +new Date(va) : 0,
+      vb ? +new Date(vb) : 0,
+      dir
+    );
+  return comparePrimitive(
+    String(va ?? "").toLowerCase(),
+    String(vb ?? "").toLowerCase(),
+    dir
+  );
+}
+
+/* ========= STATIC HOST FOR /uploads =========
+   Ảnh tĩnh được phục vụ ở cổng 3000 (không phải origin hiện tại).
+   Ví dụ: http://localhost:3000/uploads/...
+*/
+const STATIC_BASE = "http://localhost:3000";
+function toStaticUrl(u?: string) {
+  if (!u) return "";
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith("/")) return `${STATIC_BASE}${u}`;
+  return `${STATIC_BASE}/${u}`;
 }
 
 // ===== Base Modal =====
@@ -114,7 +123,7 @@ function AlbumFormModal({
 }: {
   title: string;
   initial?: Partial<AlbumDto>;
-  onSave: (payload: { name: string; description?: string }) => void;
+  onSave: (p: { name: string; description?: string }) => void;
   onClose: () => void;
 }) {
   const [name, setName] = React.useState(initial?.name ?? "");
@@ -177,20 +186,18 @@ function UploadPhotosModal({
   onClose: () => void;
 }) {
   const [files, setFiles] = React.useState<File[]>([]);
-  const [name, setName] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-
+  const baseName = (f: File) => f.name.replace(/\.[^/.]+$/, "");
   const doUpload = async () => {
-    if (files.length === 0) return;
+    if (!files.length) return;
     setBusy(true);
     try {
-      await uploadPhotos(album.id, files, name.trim() || undefined);
+      for (const f of files) await uploadPhotos(album.id, [f], baseName(f)); // tên lấy từ file
       onUploaded();
     } finally {
       setBusy(false);
     }
   };
-
   return (
     <Modal title={`Thêm hình vào: ${album.name}`} onClose={onClose}>
       <div className="form">
@@ -207,20 +214,10 @@ function UploadPhotosModal({
             />
           </div>
         </div>
-        <div className="fi">
-          <label>Tên ảnh (tuỳ chọn)</label>
-          <div className="control">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="VD: Ảnh tổng quan"
-            />
-          </div>
-        </div>
         <div className="actions actions--center actions--even">
           <button
             className="button button--primary"
-            disabled={files.length === 0 || busy}
+            disabled={!files.length || busy}
             onClick={doUpload}
           >
             {busy ? "Đang tải..." : "Tải lên"}
@@ -233,7 +230,6 @@ function UploadPhotosModal({
     </Modal>
   );
 }
-
 function EditPhotoModal({
   albumId,
   photo,
@@ -248,7 +244,6 @@ function EditPhotoModal({
   const [name, setName] = React.useState(photo.name);
   const [description, setDescription] = React.useState(photo.description ?? "");
   const [busy, setBusy] = React.useState(false);
-
   const doSave = async () => {
     setBusy(true);
     try {
@@ -261,7 +256,6 @@ function EditPhotoModal({
       setBusy(false);
     }
   };
-
   return (
     <Modal title="Sửa hình ảnh" onClose={onClose}>
       <div className="form">
@@ -314,7 +308,14 @@ function Lightbox({
   onNext: () => void;
 }) {
   const photo = photos[index];
-  const src = `/uploads/albums/${albumId}/${photo.id}`; // đường dẫn theo yêu cầu (dùng / cho web)
+
+  // SỬA Ở ĐÂY: ưu tiên photo.url; nếu relative (/uploads/...), prefix STATIC_BASE (3000).
+  // Nếu không có url, fallback theo yêu cầu: /uploads/albums/{albumId}/{photoId}
+  const src = React.useMemo(() => {
+    if (!photo) return "";
+    if (photo.url) return toStaticUrl(photo.url);
+    return toStaticUrl(`/uploads/albums/${albumId}/${photo.id}`);
+  }, [albumId, photo]);
 
   return (
     <div className="lightbox-backdrop" onClick={onClose}>
@@ -326,7 +327,7 @@ function Lightbox({
         >
           ‹
         </button>
-        <img className="lightbox-img" src={src} alt={photo.name} />
+        <img className="lightbox-img" src={src} alt={photo?.name || "photo"} />
         <button
           className="lightbox-nav lightbox-nav--right"
           onClick={onNext}
@@ -335,8 +336,8 @@ function Lightbox({
           ›
         </button>
         <div className="lightbox-caption">
-          <div className="lightbox-name">{photo.name}</div>
-          {photo.description ? (
+          <div className="lightbox-name">{photo?.name}</div>
+          {photo?.description ? (
             <div className="lightbox-desc">{photo.description}</div>
           ) : null}
         </div>
@@ -353,7 +354,6 @@ type AlbSortKey = "name" | "description" | "created_dt" | "updated_dt";
 type PhSortKey = "name" | "description" | "created_dt" | "updated_dt";
 
 export default function MediaManagement() {
-  // Trang mặc định là Albums
   const [page, setPage] = React.useState<Page>({ name: "albums" });
 
   // ===== Albums state =====
@@ -378,7 +378,7 @@ export default function MediaManagement() {
       const withIndex = data.map((v, i) => ({ v, i }));
       withIndex.sort((a, b) => {
         const c = compareByKey(a.v, b.v, albSort.key!, albSort.dir, isDate);
-        return c !== 0 ? c : a.i - b.i; // stable
+        return c !== 0 ? c : a.i - b.i;
       });
       return withIndex.map((x) => x.v);
     },
@@ -408,32 +408,25 @@ export default function MediaManagement() {
     [albLimit, applyAlbumSort]
   );
 
-  // Debounce tìm kiếm
   const debouncedSearch = useDebouncedCallback((kw: string) => {
     setAlbPage(1);
     fetchAlbums(1, kw);
   }, 400);
-
   React.useEffect(() => {
     fetchAlbums(albPage, q);
-  }, [albPage]); // đổi trang
+  }, [albPage]);
   React.useEffect(() => {
     debouncedSearch(q);
-  }, [q]); // đổi từ khoá
-
-  // Khi đổi sort album -> áp lại sort hiện thời trên data đang hiển thị (không gọi lại API)
+  }, [q]);
   React.useEffect(() => {
     setAlbums((prev) => applyAlbumSort([...prev]));
   }, [albSort, applyAlbumSort]);
-
-  const toggleAlbSort = (key: AlbSortKey) => {
+  const toggleAlbSort = (key: AlbSortKey) =>
     setAlbSort((s) =>
       s.key === key
         ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
         : { key, dir: "asc" }
     );
-  };
-
   const openPhotos = (album: AlbumDto) => setPage({ name: "photos", album });
 
   // ===== Photos state =====
@@ -442,7 +435,7 @@ export default function MediaManagement() {
   const [phPage, setPhPage] = React.useState(1);
   const [phLimit] = React.useState(10);
   const [phTotalPages, setPhTotalPages] = React.useState(1);
-  const [phTotalItems, setPhTotalItems] = React.useState(0); // tổng bản ghi (client-side)
+  const [phTotalItems, setPhTotalItems] = React.useState(0);
   const [phQ, setPhQ] = React.useState("");
   const [phSort, setPhSort] = React.useState<{
     key: PhSortKey | null;
@@ -456,9 +449,7 @@ export default function MediaManagement() {
     setAllPhotos(res.data.data);
   }, []);
 
-  // Lọc + sort + phân trang ảnh (client-side)
   const repaginatePhotos = React.useCallback(() => {
-    // filter
     const filtered = phQ.trim()
       ? allPhotos.filter((p) =>
           `${p.name} ${p.description ?? ""}`
@@ -466,20 +457,16 @@ export default function MediaManagement() {
             .includes(phQ.trim().toLowerCase())
         )
       : allPhotos;
-
-    // sort
     let sorted = filtered;
     if (phSort.key) {
       const isDate = phSort.key === "created_dt" || phSort.key === "updated_dt";
       const withIndex = filtered.map((v, i) => ({ v, i }));
       withIndex.sort((a, b) => {
         const c = compareByKey(a.v, b.v, phSort.key!, phSort.dir, isDate);
-        return c !== 0 ? c : a.i - b.i; // stable
+        return c !== 0 ? c : a.i - b.i;
       });
       sorted = withIndex.map((x) => x.v);
     }
-
-    // paginate + tổng
     const totalPages = Math.max(1, Math.ceil(sorted.length / phLimit));
     const safePage = Math.min(phPage, totalPages);
     const start = (safePage - 1) * phLimit;
@@ -494,12 +481,12 @@ export default function MediaManagement() {
   }, [page, loadPhotos]);
   React.useEffect(() => {
     if (page.name === "photos") repaginatePhotos();
-  }, [page, allPhotos, phPage, phQ, phSort, repaginatePhotos]);
+  }, [page, allPhotos, phPage, phSort, phQ, repaginatePhotos]);
   React.useEffect(() => {
     setPhPage(1);
-  }, [phQ, phSort]); // khi đổi tìm kiếm / sắp xếp: về trang 1
+  }, [phQ, phSort]);
 
-  // ===== Handlers: Albums =====
+  // ===== Handlers =====
   const [showAddAlbum, setShowAddAlbum] = React.useState(false);
   const [editingAlbum, setEditingAlbum] = React.useState<AlbumDto | null>(null);
 
@@ -512,7 +499,6 @@ export default function MediaManagement() {
     setAlbPage(1);
     fetchAlbums(1, q);
   };
-
   const doUpdateAlbum = async (
     alb: AlbumDto,
     payload: { name: string; description?: string }
@@ -521,7 +507,6 @@ export default function MediaManagement() {
     setEditingAlbum(null);
     fetchAlbums(albPage, q);
   };
-
   const doDeleteAlbum = async (alb: AlbumDto) => {
     if (!confirm(`Xóa album "${alb.name}"?`)) return;
     await deleteAlbum(alb.id);
@@ -529,13 +514,66 @@ export default function MediaManagement() {
     fetchAlbums(1, q);
   };
 
-  // ===== Handlers: Photos =====
   const doDeletePhoto = async (albumId: string, photo: PhotoDto) => {
     if (!confirm(`Xóa hình ảnh "${photo.name}"?`)) return;
     await deletePhoto(albumId, photo.id);
     await loadPhotos(albumId);
     repaginatePhotos();
   };
+
+  // ===== Drag & Drop upload =====
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragCounter = React.useRef(0);
+  const baseName = (f: File) => f.name.replace(/\.[^/.]+$/, "");
+  const handleFilesUpload = React.useCallback(
+    async (files: File[]) => {
+      if (page.name !== "photos" || !files?.length) return;
+      for (const f of files)
+        await uploadPhotos(page.album.id, [f], baseName(f));
+      await loadPhotos(page.album.id);
+      repaginatePhotos();
+    },
+    [page, loadPhotos, repaginatePhotos]
+  );
+
+  React.useEffect(() => {
+    if (page.name !== "photos") return;
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const onDragEnter = (e: DragEvent) => {
+      if (
+        e.dataTransfer &&
+        Array.from(e.dataTransfer.types).includes("Files")
+      ) {
+        dragCounter.current += 1;
+        setIsDragging(true);
+      }
+    };
+    const onDragLeave = (_e: DragEvent) => {
+      dragCounter.current = Math.max(0, dragCounter.current - 1);
+      if (dragCounter.current === 0) setIsDragging(false);
+    };
+    const onDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      dragCounter.current = 0;
+      const files = e.dataTransfer?.files
+        ? Array.from(e.dataTransfer.files)
+        : [];
+      await handleFilesUpload(files.filter((f) => f.type.startsWith("image/")));
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [page, handleFilesUpload]);
 
   // ===== Lightbox state =====
   const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
@@ -548,7 +586,7 @@ export default function MediaManagement() {
       i === null ? i : (i - 1 + photos.length) % photos.length
     );
 
-  // ===== Render =====
+  // ===== UI bits =====
   const renderSortIcon = (active: boolean, dir: Dir) => (
     <span
       className={cx("sort-icon", active && `sort-icon--${dir}`)}
@@ -557,7 +595,6 @@ export default function MediaManagement() {
       ▴▾
     </span>
   );
-
   const ToolbarAlbums = (
     <div className="toolbar">
       <div className="search-group">
@@ -580,7 +617,6 @@ export default function MediaManagement() {
       </button>
     </div>
   );
-
   const ToolbarPhotos = (album: AlbumDto) => (
     <div className="toolbar">
       <button className="button" onClick={() => setPage({ name: "albums" })}>
@@ -596,9 +632,7 @@ export default function MediaManagement() {
           className="search"
           placeholder="Tìm theo tên/mô tả ảnh…"
           value={phQ}
-          onChange={(e) => {
-            setPhQ(e.target.value);
-          }}
+          onChange={(e) => setPhQ(e.target.value)}
         />
       </div>
       <button
@@ -609,7 +643,6 @@ export default function MediaManagement() {
       </button>
     </div>
   );
-
   const AlbHeader = (
     <div
       className={cx("albums-tr", "tr--head", "tr--albums")}
@@ -647,15 +680,12 @@ export default function MediaManagement() {
       <div style={{ textAlign: "right" }}>Thao tác</div>
     </div>
   );
-
-  const togglePhSort = (key: PhSortKey) => {
+  const togglePhSort = (key: PhSortKey) =>
     setPhSort((s) =>
       s.key === key
         ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
         : { key, dir: "asc" }
     );
-  };
-
   const PhotosHeader = (
     <div
       className={cx("images-tr", "tr--head", "tr--images-photos")}
@@ -694,7 +724,6 @@ export default function MediaManagement() {
     </div>
   );
 
-  // ===== Pagination components (giống Users) =====
   const AlbPagination = (
     <div className="pagination">
       <button
@@ -746,7 +775,6 @@ export default function MediaManagement() {
       </button>
     </div>
   );
-
   const PhPagination = (
     <div className="pagination">
       <button
@@ -804,6 +832,19 @@ export default function MediaManagement() {
       <div className="card">
         <div className="page-head">
           <div className="page-title">Quản lý album & hình ảnh</div>
+          <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+            {page.name === "albums" ? (
+              <>
+                Trang {albTotalPages ? albPage : 0}/{albTotalPages} • Tổng{" "}
+                {albTotal} bản ghi
+              </>
+            ) : (
+              <>
+                Trang {phTotalPages ? phPage : 0}/{phTotalPages} • Tổng{" "}
+                {phTotalItems} bản ghi
+              </>
+            )}
+          </div>
         </div>
 
         {page.name === "albums" ? (
@@ -814,12 +855,6 @@ export default function MediaManagement() {
             {ToolbarAlbums}
 
             <div className="thead">Danh sách album</div>
-            <div style={{ marginLeft: "auto", opacity: 0.9 }}>
-              <>
-                Trang {albTotalPages ? albPage : 0}/{albTotalPages} • Tổng{" "}
-                {albTotal} bản ghi
-              </>
-            </div>
             <div className="list" role="list">
               {AlbHeader}
               {albums.map((a) => (
@@ -872,7 +907,6 @@ export default function MediaManagement() {
               ))}
             </div>
 
-            {/* Pagination (Albums) */}
             {AlbPagination}
           </>
         ) : (
@@ -880,12 +914,6 @@ export default function MediaManagement() {
             {ToolbarPhotos(page.album)}
 
             <div className="thead">Danh sách hình ảnh</div>
-            <div style={{ marginLeft: "auto", opacity: 0.9 }}>
-              <>
-                Trang {phTotalPages ? phPage : 0}/{phTotalPages} • Tổng{" "}
-                {phTotalItems} bản ghi
-              </>
-            </div>
             <div className="list" role="list">
               {PhotosHeader}
               {photos.map((p, idx) => (
@@ -938,7 +966,6 @@ export default function MediaManagement() {
               ))}
             </div>
 
-            {/* Pagination (Photos, client-side) */}
             {PhPagination}
           </>
         )}
@@ -956,11 +983,10 @@ export default function MediaManagement() {
         <AlbumFormModal
           title="Sửa Album"
           initial={editingAlbum}
-          onSave={(payload) => doUpdateAlbum(editingAlbum, payload)}
+          onSave={(p) => doUpdateAlbum(editingAlbum, p)}
           onClose={() => setEditingAlbum(null)}
         />
       )}
-
       {page.name === "photos" && showUpload && (
         <UploadPhotosModal
           album={page.album}
@@ -985,7 +1011,7 @@ export default function MediaManagement() {
         />
       )}
 
-      {/* Lightbox xem ảnh */}
+      {/* Lightbox */}
       {page.name === "photos" &&
         lightboxIndex !== null &&
         photos.length > 0 && (
@@ -998,6 +1024,17 @@ export default function MediaManagement() {
             onNext={nextLightbox}
           />
         )}
+
+      {/* Drag & Drop overlay */}
+      {page.name === "photos" && isDragging && (
+        <div
+          className="dropzone-overlay"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => e.preventDefault()}
+        >
+          <div className="dropzone-inner">Kéo ảnh vào đây</div>
+        </div>
+      )}
     </div>
   );
 }

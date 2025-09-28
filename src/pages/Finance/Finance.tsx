@@ -7,6 +7,7 @@ import {
   createFinance,
   updateFinance,
   deleteFinance,
+  exportFinancesExcel, // NEW
   type FinanceDto,
   type FinanceCreateRequest,
   type FinanceUpdateRequest,
@@ -18,6 +19,17 @@ function cx(...parts: Array<string | false | undefined>) {
 }
 const fmtVND = (n: number) =>
   (isNaN(n) ? "0" : n.toLocaleString("vi-VN")) + "₫";
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // Phân trang kiểu Users
 function buildPageList(total: number, current: number) {
@@ -53,7 +65,6 @@ function TxModal({
   onClose: () => void;
   title: string;
 }) {
-  // Map "Tên khoản" = description của API theo yêu cầu search tên
   const [desc, setDesc] = React.useState<string>(initial?.description ?? "");
   const [type, setType] = React.useState<"Thu" | "Chi">(initial?.type ?? "Thu");
   const [amountStr, setAmountStr] = React.useState<string>(() => {
@@ -81,7 +92,6 @@ function TxModal({
             ✕
           </button>
         </div>
-
         <div className="modal-body">
           <div className="form">
             <div className="row">
@@ -160,7 +170,6 @@ type SortKey = "name" | "type" | "amount" | "date";
 type SortDir = "asc" | "desc";
 
 export default function Finance() {
-  // Server paging state
   const [list, setList] = React.useState<FinanceDto[]>([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
@@ -171,17 +180,16 @@ export default function Finance() {
   const [q, setQ] = React.useState(""); // search theo tên (description)
   const [typeFilter, setTypeFilter] = React.useState<"" | "Thu" | "Chi">(""); // selectbox
 
-  // Sort (client-side trên trang hiện tại)
   const [sortKey, setSortKey] = React.useState<SortKey>("date");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
 
-  // UI modals
   const [showAdd, setShowAdd] = React.useState(false);
   const [editTx, setEditTx] = React.useState<FinanceDto | null>(null);
 
-  // Loading / error
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const [exporting, setExporting] = React.useState(false);
 
   const fetchList = React.useCallback(
     async (pageNum: number, keyword: string, typeSel: "" | "Thu" | "Chi") => {
@@ -206,7 +214,6 @@ export default function Finance() {
     []
   );
 
-  // Debounce search
   const debRef = React.useRef<number | undefined>(undefined);
   const triggerSearch = React.useCallback(
     (kw: string, typeSel: "" | "Thu" | "Chi") => {
@@ -226,7 +233,6 @@ export default function Finance() {
     triggerSearch(q, typeFilter);
   }, [q, typeFilter, triggerSearch]);
 
-  // Sorting (client-side)
   const sorted = React.useMemo(() => {
     const arr = [...list];
     arr.sort((a, b) => {
@@ -291,15 +297,30 @@ export default function Finance() {
     fetchList(newPage, q, typeFilter);
   };
 
+  // === NEW: gọi API backend để tải file Excel ===
+  const exportExcelServer = async () => {
+    try {
+      setExporting(true);
+      const blob = await exportFinancesExcel({ search: q, type: typeFilter });
+      const filename = `finances_${new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, "-")}.xlsx`;
+      downloadBlob(blob, filename);
+    } catch (e: any) {
+      alert(e?.message || "Tải Excel thất bại");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="finance-wrap">
       <div className="acard shadow-card">
-        {/* Title + counter giống Users */}
         <div className="page-head">
           <div className="page-title">Quản lý thu chi</div>
         </div>
 
-        {/* Toolbar */}
         <div className="toolbar">
           <div className="search-group">
             <label htmlFor="searchInput" className="search-label">
@@ -314,7 +335,6 @@ export default function Finance() {
             />
           </div>
 
-          {/* label + select cạnh ô tìm kiếm, độ rộng vừa đủ */}
           <div className="type-group">
             <label htmlFor="typeSelect" className="type-label">
               Chọn loại
@@ -334,7 +354,14 @@ export default function Finance() {
             </select>
           </div>
 
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button
+              className="button"
+              onClick={exportExcelServer}
+              disabled={exporting}
+            >
+              {exporting ? "Đang tải…" : "⬇️ Tải xuống Excel"}
+            </button>
             <button
               className="button button--primary"
               onClick={() => setShowAdd(true)}
@@ -487,7 +514,6 @@ export default function Finance() {
           })}
         </div>
 
-        {/* Pagination (giống Users) */}
         {!isNoData && (
           <div className="pagination">
             <button

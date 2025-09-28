@@ -75,6 +75,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: 5%;
 }
 .type-label {
   font-size: 16px;

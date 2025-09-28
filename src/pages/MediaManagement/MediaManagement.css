@@ -415,3 +415,26 @@
 .lightbox-desc {
   opacity: 0.9;
 }
+
+/* ===== Drag & Drop Overlay ===== */
+.dropzone-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 58; /* dưới lightbox (60), trên nội dung */
+  border: 3px dashed rgba(255, 255, 255, 0.35);
+}
+.dropzone-inner {
+  color: #fff;
+  font-size: 34px;
+  font-weight: 900;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+@media (max-width: 640px) {
+  .dropzone-inner {
+    font-size: 22px;
+  }
+}

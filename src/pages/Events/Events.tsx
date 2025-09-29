@@ -1,69 +1,56 @@
+// File: Events.tsx
 import * as React from "react";
 import "./Events.css";
-
-/* ===== Types ===== */
-type EventItem = {
-  id: string;
-  name: string; // Tên sự kiện
-  date: string; // YYYY-MM-DD
-  location: string; // Địa điểm
-  desc: string; // Mô tả
-};
-
-/* ===== Seed data ===== */
-const seed: EventItem[] = [
-  {
-    id: "e1",
-    name: "Hội thảo chuyển đổi số",
-    date: "2025-09-20",
-    location: "Hội trường lớn – Tầng 2",
-    desc: "Chia sẻ kinh nghiệm triển khai chuyển đổi số trong giáo dục.",
-  },
-  {
-    id: "e2",
-    name: "Ngày hội việc làm",
-    date: "2025-10-15",
-    location: "Sân vận động",
-    desc: "Giao lưu doanh nghiệp, tư vấn nghề nghiệp cho sinh viên.",
-  },
-];
+import {
+  listEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  type EventDto,
+  type EventCreateRequest,
+  type EventUpdateRequest,
+} from "./eventsApi.ts";
 
 /* ===== Utils ===== */
 function cx(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
-function buildPageList(total: number, current: number) {
+const buildPageList = (totalPages: number, current: number) => {
   const pages: (number | string)[] = [];
-  const window = 1;
-  if (total <= 7) {
-    for (let i = 1; i <= total; i++) pages.push(i);
-  } else {
+  const w = 1;
+  if (totalPages <= 7) for (let i = 1; i <= totalPages; i++) pages.push(i);
+  else {
     pages.push(1);
-    if (current - window > 2) pages.push("…");
+    if (current - w > 2) pages.push("…");
     for (
-      let i = Math.max(2, current - window);
-      i <= Math.min(total - 1, current + window);
+      let i = Math.max(2, current - w);
+      i <= Math.min(totalPages - 1, current + w);
       i++
     )
       pages.push(i);
-    if (current + window < total - 1) pages.push("…");
-    pages.push(total);
+    if (current + w < totalPages - 1) pages.push("…");
+    pages.push(totalPages);
   }
   return pages;
-}
+};
 
-/* ===== Modal ===== */
-function Modal({
+/* ===== Modal Base ===== */
+function BaseModal({
   title,
   onClose,
   children,
+  closeOnBackdrop = false, // mặc định KHÔNG đóng khi click nền (an toàn nhập liệu)
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  closeOnBackdrop?: boolean;
 }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onClick={closeOnBackdrop ? onClose : undefined}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title">{title}</div>
@@ -77,133 +64,106 @@ function Modal({
   );
 }
 
-/* ===== Confirm Dialog ===== */
-function ConfirmDialog({
-  title = "Xác nhận",
+function MessageModal({
   message,
-  onCancel,
-  onConfirm,
+  onClose,
 }: {
-  title?: string;
   message: string;
-  onCancel: () => void;
-  onConfirm: () => void;
+  onClose: () => void;
 }) {
   return (
-    <Modal title={title} onClose={onCancel}>
-      <div className="confirm-msg">{message}</div>
-      <div
-        className="actions actions--center"
-        style={{ gap: 8, marginTop: 10 }}
-      >
-        <button className="button" onClick={onCancel}>
-          Hủy
-        </button>
-        <button className="button button--danger" onClick={onConfirm}>
-          Xóa
-        </button>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal small" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">Thông báo</div>
+        </div>
+        <div className="modal-body">
+          <div className="msg">{message}</div>
+          <div className="modal-footer-center">
+            <button className="button button--primary" onClick={onClose}>
+              OK
+            </button>
+          </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
-/* ===== Create/Edit Modal ===== */
-function EventModal({
+/* ===== Add / Edit Modal ===== */
+function EventFormModal({
+  title,
   initial,
   onSave,
   onClose,
-  title,
 }: {
-  initial?: Partial<EventItem>;
-  onSave: (it: EventItem) => void;
-  onClose: () => void;
   title: string;
+  initial?: Partial<EventDto>;
+  onSave: (payload: EventCreateRequest | EventUpdateRequest) => void;
+  onClose: () => void;
 }) {
   const [name, setName] = React.useState(initial?.name ?? "");
-  const [date, setDate] = React.useState(initial?.date ?? "");
-  const [location, setLoc] = React.useState(initial?.location ?? "");
-  const [desc, setDesc] = React.useState(initial?.desc ?? "");
+  const [eventDate, setEventDate] = React.useState(initial?.event_date ?? "");
+  const [location, setLocation] = React.useState(initial?.location ?? "");
+  const [description, setDescription] = React.useState(
+    initial?.description ?? ""
+  );
 
-  // FIX tại đây: thêm () cho trim()
-  const canSave = name.trim() !== "" && date.trim() !== "";
+  const canSave = name.trim() !== "" && eventDate !== "";
 
   return (
-    <Modal title={title} onClose={onClose}>
-      <div className="form form-grid">
-        <div className="fi">
-          <label>Tên sự kiện</label>
-          <div className="control">
+    <BaseModal title={title} onClose={onClose} closeOnBackdrop={false}>
+      <div className="form">
+        <div className="row">
+          <div className="fi">
+            <label>Tên sự kiện</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Nhập tên sự kiện"
+              placeholder="Nhập tên sự kiện…"
             />
           </div>
-        </div>
-
-        <div className="fi">
-          <label>Ngày tổ chức</label>
-          <div className="control">
+          <div className="fi">
+            <label>Ngày</label>
             <input
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="fi" style={{ gridColumn: "1 / -1" }}>
-          <label>Địa điểm</label>
-          <div className="control">
-            <textarea
-              rows={2}
+        <div className="row">
+          <div className="fi">
+            <label>Địa điểm</label>
+            <input
               value={location}
-              onChange={(e) => setLoc(e.target.value)}
-              placeholder="Nhập địa điểm tổ chức"
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Nhập địa điểm…"
+            />
+          </div>
+          <div className="fi">
+            <label>Mô tả</label>
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Mô tả (tuỳ chọn)…"
             />
           </div>
         </div>
 
-        <div className="fi" style={{ gridColumn: "1 / -1" }}>
-          <label>Mô tả</label>
-          <div className="control">
-            <textarea
-              rows={3}
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="Ghi chú, nội dung chi tiết…"
-            />
-          </div>
-        </div>
-
-        <div
-          className="actions actions--center actions--even"
-          style={{ gridColumn: "1 / -1" }}
-        >
+        <div className="modal-footer-center">
           <button
             className="button button--primary"
             disabled={!canSave}
-            onClick={async () => {
-              const item: EventItem = {
-                id: initial?.id ?? `e_${Date.now()}`,
+            onClick={() =>
+              onSave({
                 name: name.trim(),
-                date,
-                location: (location || "").trim(),
-                desc: (desc || "").trim(),
-              };
-
-              /* TODO: Gọi API lưu sự kiện (thay mock bằng API thật)
-                 Ví dụ:
-                 await fetch("/api/events", {
-                   method: "POST",
-                   headers: { "Content-Type": "application/json" },
-                   body: JSON.stringify(item),
-                 });
-              */
-              await mockCreateEventAPI(item);
-
-              onSave(item); // cập nhật UI & đóng popup
-            }}
+                event_date: eventDate,
+                location: location.trim() || undefined,
+                description: description.trim() || undefined,
+              })
+            }
           >
             Lưu
           </button>
@@ -212,84 +172,101 @@ function EventModal({
           </button>
         </div>
       </div>
-    </Modal>
+    </BaseModal>
   );
-}
-
-/* ===== Mock API (thay bằng API thật khi tích hợp) ===== */
-async function mockCreateEventAPI(payload: EventItem) {
-  await new Promise((r) => setTimeout(r, 150));
-  console.log("POST /api/events", payload);
 }
 
 /* ===== Page ===== */
-type SortKey = "name" | "date" | "location" | "desc";
+type SortKey = "name" | "date" | "location" | "description";
 type SortDir = "asc" | "desc";
 
 export default function Events() {
-  const [list, setList] = React.useState<EventItem[]>(seed);
+  // filters & paging
   const [q, setQ] = React.useState("");
+  const [qDebounced, setQDebounced] = React.useState("");
   const [page, setPage] = React.useState(1);
+  const LIMIT = 10;
+
+  // data
+  const [list, setList] = React.useState<EventDto[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+
+  // ui
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [editRow, setEditRow] = React.useState<EventDto | null>(null);
+  const [msg, setMsg] = React.useState<string | null>(null);
+
+  // sort
   const [sortKey, setSortKey] = React.useState<SortKey>("date");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
-  const [showAdd, setShowAdd] = React.useState(false);
-  const [edit, setEdit] = React.useState<EventItem | null>(null);
-  const [view, setView] = React.useState<EventItem | null>(null);
-  const [confirmTarget, setConfirmTarget] = React.useState<EventItem | null>(
-    null
+
+  // debounce q -> qDebounced
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setQDebounced(q), 400);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [qDebounced]);
+
+  const fetchList = React.useCallback(
+    async (pageNum: number, keyword: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await listEvents({
+          page: pageNum,
+          limit: LIMIT,
+          search: keyword,
+        });
+        const dt = res.data;
+        setList(dt.data);
+        setTotal(dt.total);
+        setTotalPages(Math.max(1, Math.ceil(dt.total / dt.limit)));
+      } catch (e: any) {
+        setError(e?.message || "Lỗi tải dữ liệu");
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
   );
-
-  const PAGE_SIZE = 10;
-
-  const filtered = React.useMemo(() => {
-    const kw = q.trim().toLowerCase();
-    if (!kw) return list;
-    return list.filter((it) =>
-      `${it.name} ${it.date} ${it.location} ${it.desc}`
-        .toLowerCase()
-        .includes(kw)
-    );
-  }, [list, q]);
+  React.useEffect(() => {
+    fetchList(page, qDebounced);
+  }, [page, qDebounced, fetchList]);
 
   const sorted = React.useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...list];
     arr.sort((a, b) => {
-      let av: any, bv: any;
+      let av: any = "",
+        bv: any = "";
       switch (sortKey) {
         case "name":
           av = a.name || "";
           bv = b.name || "";
           break;
         case "date":
-          av = a.date || "";
-          bv = b.date || "";
+          av = a.event_date || "";
+          bv = b.event_date || "";
           break;
         case "location":
           av = a.location || "";
           bv = b.location || "";
           break;
-        case "desc":
-          av = a.desc || "";
-          bv = b.desc || "";
+        case "description":
+          av = a.description || "";
+          bv = b.description || "";
           break;
       }
       const cmp = String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [filtered, sortKey, sortDir]);
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [q, sortKey, sortDir]);
-
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const current = Math.min(page, totalPages);
-  const start = (current - 1) * PAGE_SIZE;
-  const paginated = sorted.slice(start, start + PAGE_SIZE);
-
-  const isNoData = total === 0;
+  }, [list, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey !== key) {
@@ -300,56 +277,82 @@ export default function Events() {
     }
   };
 
-  const onCreate = (item: EventItem) => {
-    setList((prev) => [item, ...prev]);
+  // CRUD
+  const onCreate = async (payload: EventCreateRequest) => {
+    await createEvent(payload);
     setShowAdd(false);
+    setPage(1);
+    await fetchList(1, qDebounced);
+    setMsg("Thêm sự kiện thành công.");
   };
-  const onUpdate = (item: EventItem) => {
-    setList((prev) => prev.map((x) => (x.id === item.id ? item : x)));
-    setEdit(null);
+
+  const onUpdate = async (id: string, payload: EventUpdateRequest) => {
+    await updateEvent(id, payload);
+    setEditRow(null);
+    await fetchList(page, qDebounced);
+    setMsg("Cập nhật sự kiện thành công.");
   };
-  const onDelete = (id: string) =>
-    setList((prev) => prev.filter((x) => x.id !== id));
+
+  const onDelete = async (id: string) => {
+    if (!confirm("Bạn chắc chắn muốn xóa sự kiện này?")) return;
+    await deleteEvent(id);
+    const newTotal = Math.max(0, total - 1);
+    const newTotalPages = Math.max(1, Math.ceil(newTotal / LIMIT));
+    const newPage = Math.min(page, newTotalPages);
+    setPage(newPage);
+    await fetchList(newPage, qDebounced);
+    setMsg("Xóa sự kiện thành công.");
+  };
+
+  const current = Math.min(page, totalPages);
+  const isNoData = total === 0;
+  const renderSort = (active: boolean, dir: SortDir) => (
+    <span className={cx("sort-icons", active && "on")}>
+      <i>▲</i>
+      <i>▼</i>
+    </span>
+  );
 
   return (
     <div className="events-wrap">
-      <div className="card">
-        {/* Title */}
+      <div className="ecard shadow-card">
         <div className="page-head">
           <div className="page-title">Quản lý sự kiện</div>
+          <div style={{ marginLeft: "auto", opacity: 0.9 }}>
+            Trang {totalPages ? current : 0}/{totalPages} • Tổng {total} bản ghi
+          </div>
         </div>
 
         {/* Toolbar */}
         <div className="toolbar">
           <div className="search-group">
-            <label htmlFor="searchInput" className="search-label">
+            <label htmlFor="searchEvents" className="search-label">
               Tìm kiếm
             </label>
             <input
-              id="searchInput"
+              id="searchEvents"
               className="search"
-              placeholder="Tìm theo tên sự kiện, địa điểm, mô tả…"
+              placeholder="Tìm theo tên sự kiện…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <div className="toolbar-right">
+
+          <div style={{ marginLeft: "auto" }}>
             <button
-              className="button button--primary add-btn"
+              className="button button--primary"
               onClick={() => setShowAdd(true)}
             >
               + Thêm sự kiện
             </button>
           </div>
         </div>
-        <div className="count">Tìm thấy {total} kết quả</div>
-        <div className="thead">Kết quả tìm kiếm</div>
-        {/* Empty banner */}
-        {isNoData && (
-          <div className="search-empty-banner">Không tìm thấy kết quả</div>
-        )}
 
-        {/* List */}
+        {error && <div className="search-empty-banner">{error}</div>}
+        {loading && <div className="count">Đang tải…</div>}
+
+        <div className="thead">Danh sách sự kiện</div>
+
         <div className="list" role="list">
           {!isNoData && (
             <div
@@ -358,110 +361,27 @@ export default function Events() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="th" onClick={() => toggleSort("name")}>
-                <span>Tên sự kiện</span>
-                <span className="sort-icons">
-                  <i
-                    className={cx(
-                      "up",
-                      sortKey === "name" && sortDir === "asc" && "on"
-                    )}
-                  >
-                    ▲
-                  </i>
-                  <i
-                    className={cx(
-                      "down",
-                      sortKey === "name" && sortDir === "desc" && "on"
-                    )}
-                  >
-                    ▼
-                  </i>
-                </span>
+                Tên sự kiện{renderSort(sortKey === "name", sortDir)}
               </div>
               <div className="th" onClick={() => toggleSort("date")}>
-                <span>Ngày tổ chức</span>
-                <span className="sort-icons">
-                  <i
-                    className={cx(
-                      "up",
-                      sortKey === "date" && sortDir === "asc" && "on"
-                    )}
-                  >
-                    ▲
-                  </i>
-                  <i
-                    className={cx(
-                      "down",
-                      sortKey === "date" && sortDir === "desc" && "on"
-                    )}
-                  >
-                    ▼
-                  </i>
-                </span>
+                Ngày{renderSort(sortKey === "date", sortDir)}
               </div>
               <div className="th" onClick={() => toggleSort("location")}>
-                <span>Địa điểm</span>
-                <span className="sort-icons">
-                  <i
-                    className={cx(
-                      "up",
-                      sortKey === "location" && sortDir === "asc" && "on"
-                    )}
-                  >
-                    ▲
-                  </i>
-                  <i
-                    className={cx(
-                      "down",
-                      sortKey === "location" && sortDir === "desc" && "on"
-                    )}
-                  >
-                    ▼
-                  </i>
-                </span>
+                Địa điểm{renderSort(sortKey === "location", sortDir)}
               </div>
-              <div className="th" onClick={() => toggleSort("desc")}>
-                <span>Mô tả</span>
-                <span className="sort-icons">
-                  <i
-                    className={cx(
-                      "up",
-                      sortKey === "desc" && sortDir === "asc" && "on"
-                    )}
-                  >
-                    ▲
-                  </i>
-                  <i
-                    className={cx(
-                      "down",
-                      sortKey === "desc" && sortDir === "desc" && "on"
-                    )}
-                  >
-                    ▼
-                  </i>
-                </span>
+              <div className="th" onClick={() => toggleSort("description")}>
+                Mô tả{renderSort(sortKey === "description", sortDir)}
               </div>
-              {/* <div style={{ textAlign: "right" }}>Thao tác</div> */}
+              <div style={{ textAlign: "right" }}>Thao tác</div>
             </div>
           )}
 
-          {paginated.map((it) => (
-            <div
-              key={it.id}
-              className="events-tr"
-              role="listitem"
-              title="Xem chi tiết"
-            >
-              <div
-                className="td td--name"
-                onClick={() => setView(it)}
-                style={{ cursor: "pointer" }}
-              >
-                {it.name}
-              </div>
-              <div className="td td--date">{it.date}</div>
-              <div className="td td--location">{it.location || "-"}</div>
-              <div className="td td--desc">{it.desc || "-"}</div>
+          {sorted.map((r) => (
+            <div key={r.id} className="events-tr" role="listitem">
+              <div className="td td--name">{r.name || "—"}</div>
+              <div className="td">{r.event_date || "—"}</div>
+              <div className="td">{r.location || "—"}</div>
+              <div className="td">{r.description || "—"}</div>
               <div
                 className="td td--actions"
                 style={{
@@ -471,12 +391,12 @@ export default function Events() {
                   justifyContent: "flex-end",
                 }}
               >
-                <button className="button" onClick={() => setEdit(it)}>
+                <button className="button" onClick={() => setEditRow(r)}>
                   Sửa
                 </button>
                 <button
                   className="button button--danger"
-                  onClick={() => setConfirmTarget(it)}
+                  onClick={() => onDelete(r.id)}
                 >
                   Xóa
                 </button>
@@ -485,8 +405,7 @@ export default function Events() {
           ))}
         </div>
 
-        {/* Pagination */}
-        {!isNoData && (
+        {total > 0 && (
           <div className="pagination">
             <button
               className="page-btn"
@@ -542,45 +461,23 @@ export default function Events() {
         )}
       </div>
 
-      {/* Popups */}
+      {/* Modals */}
       {showAdd && (
-        <EventModal
+        <EventFormModal
           title="Thêm sự kiện"
           onSave={onCreate}
           onClose={() => setShowAdd(false)}
         />
       )}
-      {edit && (
-        <EventModal
+      {editRow && (
+        <EventFormModal
           title="Sửa sự kiện"
-          initial={edit}
-          onSave={onUpdate}
-          onClose={() => setEdit(null)}
+          initial={editRow}
+          onSave={(payload) => onUpdate(editRow.id, payload)}
+          onClose={() => setEditRow(null)}
         />
       )}
-      {view && (
-        <Modal title={view.name} onClose={() => setView(null)}>
-          <div className="event-view-meta">
-            <div>
-              <b>Ngày tổ chức:</b> {view.date}
-            </div>
-            <div>
-              <b>Địa điểm:</b> {view.location || "-"}
-            </div>
-          </div>
-          <div className="event-view-desc">{view.desc || "-"}</div>
-        </Modal>
-      )}
-      {confirmTarget && (
-        <ConfirmDialog
-          message={`Bạn có chắc chắn muốn xóa sự kiện "${confirmTarget.name}"?`}
-          onCancel={() => setConfirmTarget(null)}
-          onConfirm={() => {
-            onDelete(confirmTarget.id);
-            setConfirmTarget(null);
-          }}
-        />
-      )}
+      {msg && <MessageModal message={msg} onClose={() => setMsg(null)} />}
     </div>
   );
 }

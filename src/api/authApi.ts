@@ -2,6 +2,7 @@
 // Quản lý login/logout, lưu session và phát sự kiện thay đổi trạng thái đăng nhập.
 
 let API_BASE = "http://localhost:3000/api/v1";
+const TOKEN_KEY = "access_token";
 export function setAuthApiBase(url: string) {
   API_BASE = url.replace(/\/+$/, "");
 }
@@ -65,6 +66,11 @@ async function http(path: string, init: RequestInit = {}) {
   return ct.includes("application/json") ? res.json() : res.text();
 }
 
+export function setAccessToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
 /** ✅ Login: body luôn { phone_number, password } */
 export async function login(
   phone_number: string,
@@ -80,6 +86,8 @@ export async function login(
     user: data?.data?.user ?? data?.user,
   };
   saveUserInfo(info);
+
+  setAccessToken(info.access_token);
   return info;
 }
 
@@ -92,7 +100,7 @@ export async function logout(): Promise<void> {
       body: JSON.stringify({ access_token: token ?? "" }),
     });
   } catch {
-    // bỏ qua lỗi mạng/hết hạn token
+    setAccessToken(null);
   } finally {
     clearUserInfo(); // phát AUTH_CHANGED_EVENT
   }

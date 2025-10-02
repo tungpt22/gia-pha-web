@@ -1,6 +1,6 @@
 // File: Events.tsx
 import * as React from "react";
-import "./Events.css";
+import "./EventsManagement.css";
 import {
   listEvents,
   createEvent,

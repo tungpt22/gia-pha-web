@@ -8,20 +8,19 @@ import Login from "./pages/Login/Login";
 import { useLocation, Navigate, Routes, Route } from "react-router-dom";
 import Footer from "./components/Footer/Footer";
 import Navbar from "./components/Navbar/Navbar";
-import BangVang from "./pages/BangVang/BangVang";
+import BangVang from "./pages/Awards/Awards";
 
 import Home from "./pages/Home/Home";
-import Quy from "./pages/Quy/Quy";
-import ThanhVien from "./pages/ThanhVien/ThanhVien";
-import ThuVienAnh from "./pages/ThuVienAnh/ThuVienAnh";
+import ThuVienAnh from "./pages/Media/Media";
 import "./styles/global.css";
 
-import Awards from "./pages/Awards/Awards";
+import Awards from "./pages/AwardsManagement/AwardsManagement";
 import Finance from "./pages/Finance/Finance";
 import FamilyTree from "./pages/FamilyTree/FamilyTree";
 import MediaManagement from "./pages/MediaManagement/MediaManagement";
-import Events from "./pages/Events/Events";
+import Events from "./pages/EventsManagement/EventsManagement";
 import NewsManagement from "./pages/NewsManagement/NewsManagement";
+import News from "./pages/News/News";
 
 function LoginRoute() {
   const { token } = useAuth();
@@ -39,11 +38,10 @@ export default function App() {
           <Route path="/" element={<Home />} />
           {/* Public */}
 
-          <Route path="/thanh-vien" element={<ThanhVien />} />
           <Route path="/bang-vang" element={<BangVang />} />
           <Route path="/thu-vien-anh" element={<ThuVienAnh />} />
-          <Route path="/quy" element={<Quy />} />
-          <Route path="/family-tree" element={<FamilyTree />} />
+          <Route path="/cay-gia-pha" element={<FamilyTree />} />
+          <Route path="/tin-tuc" element={<News />} />
 
           {/* Login: chặn khi đã đăng nhập */}
           <Route path="/login" element={<LoginRoute />} />

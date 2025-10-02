@@ -72,19 +72,18 @@ export default function Navbar() {
 
         <nav className={"navbar__menu" + (openMobile ? " open" : "")}>
           {item("/", "TRANG CHỦ", true)}
-          {item("/family-tree", "CÂY PHẢ HỆ")}
-          {item("/thanh-vien", "THÀNH VIÊN")}
+          {item("/cay-gia-pha", "CÂY GIA PHẢ")}
           {item("/bang-vang", "BẢNG VÀNG")}
           {item("/su-kien", "SỰ KIỆN")}
+          {item("/tin-tuc", "TIN TỨC")}
           {item("/thu-vien-anh", "THƯ VIỆN ẢNH")}
-          {item("/quy", "QUỸ")}
 
           {logged && (
             <div
               ref={adminRef}
               className={"dropdown" + (openQL ? " open" : "")}
             >
-              <button
+              <a
                 type="button"
                 className="navbar__link"
                 aria-haspopup="menu"
@@ -92,7 +91,7 @@ export default function Navbar() {
                 onClick={() => setOpenQL((v) => !v)}
               >
                 QUẢN LÝ
-              </button>
+              </a>
               <div className="dropdown-menu" role="menu">
                 <NavLink
                   className="dropdown-item"
@@ -160,7 +159,7 @@ export default function Navbar() {
 
           <div className={"navbar__right" + (openMobile ? " show" : "")}>
             {!logged ? (
-              <button
+              <a
                 className="navbar__link"
                 type="button"
                 onClick={() => {
@@ -169,13 +168,13 @@ export default function Navbar() {
                 }}
               >
                 ĐĂNG NHẬP
-              </button>
+              </a>
             ) : (
               <div
                 ref={userRef}
                 className={"dropdown user-dd" + (openUser ? " open" : "")}
               >
-                <button
+                <a
                   type="button"
                   className="navbar__link"
                   aria-haspopup="menu"
@@ -199,7 +198,7 @@ export default function Navbar() {
                   <span className="navbar__hello">
                     Xin chào {user?.name || "Bạn"}
                   </span>
-                </button>
+                </a>
 
                 <div className="dropdown-menu" role="menu">
                   <NavLink

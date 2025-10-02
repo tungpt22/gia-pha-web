@@ -1,38 +1,96 @@
-.qgrid {
-  display: grid;
-  gap: 18px;
-}
-@media (min-width: 768px) {
-  .qgrid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-.qcard {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 18px;
+/* Container trung tâm + khoảng cách hợp lý, thu nhỏ ~30% tổng thể */
+.quick-tiles.qa-center {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  justify-content: center; /* căn giữa màn hình */
+  align-items: stretch;
+  gap: 16px; /* giãn cách hợp lý giữa 3 nút */
+  flex-wrap: wrap;
+  margin: 10px auto 6px;
+  max-width: 880px;
 }
-.qicon {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
-  background: rgba(139, 14, 14, 0.08);
+
+/* Thẻ gọn hơn ~30% so với trước */
+.quick-tiles.qa-center .tile {
+  position: relative;
+  background: #f1e2b7;
+  border: 1px solid #e6d498;
+  border-radius: 12px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* căn giữa NGANG */
+  text-align: center;
+
+  width: 240px; /* thu nhỏ chiều ngang  */
+  min-height: 112px; /* thu nhỏ chiều cao ~30% */
+  padding: 14px 14px 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.quick-tiles.qa-center .tile:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+.quick-tiles.qa-center .tile:focus-visible {
+  outline: 3px solid #2b85ff;
+  outline-offset: 2px;
+}
+
+/* Thanh đỏ */
+.quick-tiles.qa-center .tile-cap {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 8px;
+  height: 8px;
+  background: #7a0b0b;
+  border-radius: 8px;
+}
+
+/* VÙNG ICON – chiếm 50% chiều cao tile, căn giữa NGANG/DỌC */
+.quick-tiles.qa-center .tile-ic {
+  flex: 1 0 50%;
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--brand);
+  justify-content: center; /* căn giữa ngang */
+  color: #7a0b0b;
+  margin: 2px 0 0;
 }
-.qtitle {
-  margin: 0 0 6px;
+
+/* Icon to – nằm giữa nhờ justify-content:center */
+.quick-tiles.qa-center .tile-ic .tile-svg {
+  max-height: 72%;
+  max-width: 72%;
+  width: auto;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+/* Vùng chữ */
+.quick-tiles.qa-center .tile-text {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.quick-tiles.qa-center .tile-tt {
+  color: #7a0b0b;
   font-weight: 800;
+  font-size: 18px;
+  line-height: 1.12;
 }
-.qtext {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.55;
+.quick-tiles.qa-center .tile-sub {
+  color: #5b3c3c;
+  font-size: 12.5px;
+}
+
+/* Responsive: xuống 2-1 cột tự động vì dùng flex-wrap */
+@media (max-width: 420px) {
+  .quick-tiles.qa-center .tile {
+    width: 100%;
+    max-width: 320px;
+  }
 }

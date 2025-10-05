@@ -1,0 +1,254 @@
+/* Biến chiều cao đường dọc giữa các tầng – giữ đồng bộ để KHÔNG bị hở */
+:root {
+  --branch-v: 38px;
+}
+
+* {
+  box-sizing: border-box;
+}
+ul,
+li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.familyWrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #fff;
+  color: #0f172a;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial;
+}
+.ftToolbar {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ftZoomLabel {
+  font-weight: 700;
+}
+.arrows button {
+  margin-right: 6px;
+  height: 28px;
+  min-width: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.treeWrap {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: auto;
+  background: #fff;
+}
+.ftCanvas {
+  position: relative;
+  min-width: max(100%, 960px);
+  padding: 48px 32px 88px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ================== UL/LI tạo đường nối ================== */
+.geneTree {
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* Tầng con của 1 node */
+.geneTree ul {
+  position: relative;
+  padding-top: var(--branch-v); /* khoảng dọc cha – con */
+}
+
+/* Đường dọc từ “cụm vợ/chồng” xuống thanh ngang con (ở GIỮA) */
+.couple.hasChildren::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(-1 * var(--branch-v));
+  width: 2px;
+  height: var(--branch-v);
+  background: #111827;
+}
+
+/* Mỗi con là 1 <li> – để lại khoảng phía trên cho đường dọc */
+.geneTree li {
+  float: left;
+  position: relative;
+  text-align: center;
+  padding: var(--branch-v) 16px 0 16px; /* đẩy card xuống dưới khỏi thanh ngang */
+}
+
+/* Hai nửa đường NGANG – tỏa từ trục giữa ra hai phía */
+.geneTree li::before,
+.geneTree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 0; /* bỏ chiều cao để tránh vẽ thêm dọc */
+  border-top: 2px solid #111827;
+}
+.geneTree li::before {
+  right: 50%;
+}
+.geneTree li::after {
+  left: 50%;
+}
+
+/* Nếu chỉ có 1 con: bỏ NGANG nhưng GIỮ đường DỌC */
+.geneTree li:only-child::before,
+.geneTree li:only-child::after {
+  display: none;
+}
+
+/* Con đầu: bỏ nửa trái của NGANG, GIỮ dọc */
+.geneTree li:first-child::before {
+  border-top: none;
+}
+/* Con cuối: bỏ nửa phải của NGANG, GIỮ dọc */
+.geneTree li:last-child::after {
+  border-top: none;
+}
+
+/* Thanh DỌC trục giữa của cụm con – chạm chính giữa dải */
+.geneTree ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: var(--branch-v);
+  border-left: 2px solid #111827;
+}
+
+/* Clear float */
+.geneTree ul::after,
+.geneTree::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+/* ================== Cụm vợ chồng + Card ================== */
+.couple {
+  display: inline-flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: center;
+  position: relative;
+}
+
+.card {
+  width: 180px;
+  min-height: 82px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  row-gap: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.name {
+  font-weight: 700;
+  font-size: 15px;
+  color: #0f172a;
+  text-align: left;
+}
+.role {
+  font-size: 12px;
+  color: #475569;
+  text-align: left;
+  min-height: 16px;
+}
+.view {
+  justify-self: start;
+  padding: 0 6px;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* ================== Popup ================== */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+.modal {
+  width: min(760px, 96vw);
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.modalTitle {
+  font-weight: 700;
+}
+.modalClose {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+.modalBody {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  padding: 12px;
+}
+.modalAvatar {
+  width: 220px;
+  height: 220px;
+  border: 1px solid #e5e7eb;
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+.modalAvatar img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.noImage {
+  color: #64748b;
+  font-size: 14px;
+}
+.modalInfo > div {
+  margin-bottom: 6px;
+}
+.modalFooter {
+  padding: 10px 12px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+}

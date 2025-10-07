@@ -11,7 +11,7 @@ import {
   type FinanceDto,
   type FinanceCreateRequest,
   type FinanceUpdateRequest,
-} from "../../api/financeApi";
+} from "./financeApi";
 
 /* ===== Utils ===== */
 function cx(...parts: Array<string | false | undefined>) {

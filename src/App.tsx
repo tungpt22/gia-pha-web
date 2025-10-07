@@ -21,6 +21,7 @@ import MediaManagement from "./pages/MediaManagement/MediaManagement";
 import Events from "./pages/EventsManagement/EventsManagement";
 import NewsManagement from "./pages/NewsManagement/NewsManagement";
 import News from "./pages/News/News";
+import NotiManagement from "./pages/NotiManagement/NotiManagement";
 
 function LoginRoute() {
   const { token } = useAuth();
@@ -110,6 +111,14 @@ export default function App() {
             element={
               <PrivateRoute>
                 <ProfileEdit />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/admin/notifications"
+            element={
+              <PrivateRoute>
+                <NotiManagement />
               </PrivateRoute>
             }
           />

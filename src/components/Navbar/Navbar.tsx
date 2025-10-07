@@ -153,6 +153,16 @@ export default function Navbar() {
                 >
                   Quản lý tin tức
                 </NavLink>
+                <NavLink
+                  className="dropdown-item"
+                  to="/admin/notifications"
+                  onClick={() => {
+                    setOpenQL(false);
+                    setOpenMobile(false);
+                  }}
+                >
+                  Quản lý thông báo
+                </NavLink>
               </div>
             </div>
           )}

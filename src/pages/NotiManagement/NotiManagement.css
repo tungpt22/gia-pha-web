@@ -1,0 +1,248 @@
+/* NotiManagement.css */
+
+/* ===== Layout & Card ===== */
+.noti-wrap {
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.ncard {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+}
+.shadow-card {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+}
+
+/* ===== Title ===== */
+.page-head {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.page-title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+  display: inline-block;
+  position: relative;
+}
+.page-title::after {
+  content: "";
+  display: block;
+  height: 3px;
+  width: auto;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #bb850b, #990c0c);
+}
+
+/* ===== Toolbar ===== */
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+/* ===== Buttons ===== */
+.button {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+.button--primary {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+.button--danger {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+.button--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ===== List/Table ===== */
+.thead {
+  opacity: 0.7;
+  font-weight: 800;
+  margin: 8px 0;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.noti-tr {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  display: grid;
+  align-items: center;
+  padding: 12px 14px;
+  gap: 10px;
+  grid-template-columns: 1.6fr 2fr 1fr 1fr 140px;
+}
+.tr--head {
+  background: #f9fafb;
+  font-weight: 800;
+}
+
+@media (max-width: 1024px) {
+  .noti-tr {
+    grid-template-columns: 1fr;
+  }
+}
+
+.th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+.td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.td--title {
+  font-weight: 600;
+}
+
+/* Sort icons */
+.sort-icons {
+  display: inline-flex;
+  flex-direction: column;
+  margin-left: 6px;
+  font-size: 10px;
+  line-height: 10px;
+  opacity: 0.35;
+}
+.sort-icons.on {
+  opacity: 1;
+}
+
+/* Pagination */
+.pagination {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.page-btn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 36px;
+}
+.page-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.page-btn--active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+.page-ellipsis {
+  padding: 0 4px;
+  color: #6b7280;
+}
+
+/* ===== Modal ===== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+.modal {
+  width: min(900px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+.modal.small {
+  width: min(480px, 100%);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.modal-title {
+  font-weight: 800;
+}
+.modal-body {
+  padding: 14px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.form .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.form .fi {
+  display: block;
+}
+.form .fi label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+.form .fi input,
+.form .fi textarea,
+.form .fi select {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.modal-footer-center {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.msg {
+  font-size: 14px;
+  color: #111827;
+}
+
+@media (max-width: 640px) {
+  .form .row {
+    grid-template-columns: 1fr;
+  }
+}

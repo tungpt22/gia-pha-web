@@ -20,9 +20,10 @@ import {
   setApiBase,
   setAccessToken,
   getAccessToken,
+  uploadProfile,
   type ListResult,
   type UserOption,
-} from "../../api/usersApi";
+} from "./usersApi";
 
 /* ========================== TYPES (UI) ========================== */
 export type ActivityItem = {
@@ -36,6 +37,7 @@ export type ActivityItem = {
 };
 
 type Role = "Admin" | "Thành viên";
+type Status = "alive" | "dead" | "lock";
 
 export type User = {
   id: string;
@@ -47,7 +49,7 @@ export type User = {
   phone?: string;
   address?: string;
   role: Role;
-  photoName?: string;
+  photoName?: string; // profile_img on backend
   activities?: ActivityItem[];
   relationships?: {
     father?: string;
@@ -62,20 +64,20 @@ function cx(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 function buildPageList(total: number, current: number) {
+  const win = 1; // tránh đụng global window
   const pages: (number | string)[] = [];
-  const window = 1;
   if (total <= 7) {
     for (let i = 1; i <= total; i++) pages.push(i);
   } else {
     pages.push(1);
-    if (current - window > 2) pages.push("…");
+    if (current - win > 2) pages.push("…");
     for (
-      let i = Math.max(2, current - window);
-      i <= Math.min(total - 1, current + window);
+      let i = Math.max(2, current - win);
+      i <= Math.min(total - 1, current + win);
       i++
     )
       pages.push(i);
-    if (current + window < total - 1) pages.push("…");
+    if (current + win < total - 1) pages.push("…");
     pages.push(total);
   }
   return pages;
@@ -291,6 +293,14 @@ export default function Users() {
       setNotice({ title: "Lỗi", message: `Xoá thất bại: ${e?.message || e}` });
     }
   };
+
+  /* ============================ URL ẢNH ============================ */
+  const fileUrl = React.useCallback((path?: string | null) => {
+    if (!path) return "";
+    const clean = String(path).replace(/^\/+/, "");
+    // server ảnh: http://localhost:3000/uploads/...
+    return `http://localhost:3000/${clean}`;
+  }, []);
 
   /* ============================ RENDER ============================ */
   const isEmpty = sorted.length === 0;
@@ -562,6 +572,7 @@ export default function Users() {
             onSaveInfo={onSaveInfo}
             onClose={() => setPicked(undefined)}
             onGlobalNotice={(n) => setNotice(n)}
+            fileUrl={fileUrl}
           />
         </Modal>
       )}
@@ -572,6 +583,7 @@ export default function Users() {
           <CreateUser
             onCreate={onCreate}
             onClose={() => setCreateMode(false)}
+            fileUrl={fileUrl}
           />
         </Modal>
       )}
@@ -654,12 +666,14 @@ function UserDetail({
   onSaveInfo,
   onClose,
   onGlobalNotice,
+  fileUrl,
 }: {
   user: User;
   users: User[];
   onSaveInfo: (u: User) => Promise<void>;
   onClose: () => void;
   onGlobalNotice: (n: { title?: string; message: string } | null) => void;
+  fileUrl: (p?: string | null) => string;
 }) {
   const [tab, setTab] = React.useState<"info" | "activities" | "relations">(
     "info"
@@ -699,6 +713,10 @@ function UserDetail({
     message: string;
   } | null>(null);
 
+  // ====== STATUS (UI only) ======
+  const initialStatus: Status = u.dod ? "dead" : "alive";
+  const [status, setStatus] = React.useState<Status>(initialStatus);
+
   // ====== RELATIONSHIPS ======
   type RelItem = {
     id: string;
@@ -726,6 +744,12 @@ function UserDetail({
   const [viewUser, setViewUser] = React.useState<RelItem["to_user"] | null>(
     null
   );
+
+  // ====== Avatar preview ======
+  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(
+    u.photoName ? fileUrl(u.photoName) : undefined
+  );
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
 
   async function refreshRelationshipsAndOptions() {
     try {
@@ -763,7 +787,7 @@ function UserDetail({
     (async () => {
       try {
         const items = await getActivities(u.id);
-        const normalized = items.map((x) => ({
+        const normalized = items.map((x: any) => ({
           id: x.id,
           start_date: x.start_date ?? "",
           end_date: x.end_date ?? "",
@@ -875,6 +899,24 @@ function UserDetail({
   );
   const children = rels.filter((r) => r.relation_type === "Con");
 
+  // ====== Upload ảnh ======
+  const pickAndUpload = async (file: File) => {
+    try {
+      const filename = await uploadProfile(file);
+      setU((prev) => ({ ...prev, photoName: filename }));
+      setAvatarUrl(fileUrl(filename));
+      setLocalNotice({
+        title: "Thành công",
+        message: "Tải ảnh lên thành công.",
+      });
+    } catch (e: any) {
+      setLocalNotice({
+        title: "Lỗi",
+        message: `Tải ảnh thất bại: ${e?.message || e}`,
+      });
+    }
+  };
+
   return (
     <div>
       <div className="tabbar">
@@ -898,7 +940,7 @@ function UserDetail({
         </button>
       </div>
 
-      {/* ====== INFO (giữ như cũ) ====== */}
+      {/* ====== INFO (Tình trạng dưới Vai trò + Avatar preview) ====== */}
       {tab === "info" && (
         <div className="form form-grid">
           <div className="fi">
@@ -924,6 +966,7 @@ function UserDetail({
               </select>
             </div>
           </div>
+
           <div className="fi fi--date">
             <label>Ngày sinh</label>
             <div className="control control--with-clear">
@@ -940,22 +983,7 @@ function UserDetail({
               </button>
             </div>
           </div>
-          <div className="fi fi--date">
-            <label>Ngày mất</label>
-            <div className="control control--with-clear">
-              <input
-                type="date"
-                value={u.dod || ""}
-                onChange={(e) => setU({ ...u, dod: e.target.value })}
-              />
-              <button
-                className="button button--ghost button--icon clear-btn"
-                onClick={() => setU({ ...u, dod: undefined })}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+
           <div className="fi">
             <label>Email</label>
             <div className="control">
@@ -996,16 +1024,103 @@ function UserDetail({
               </select>
             </div>
           </div>
-          <div className="fi" style={{ gridColumn: "1 / -1" }}>
-            <label>Ảnh</label>
+
+          {/* Tình trạng dưới Vai trò */}
+          <div className="fi">
+            <label>Tình trạng</label>
             <div className="control">
-              <input
-                placeholder="Tên file ảnh"
-                value={u.photoName || ""}
-                onChange={(e) => setU({ ...u, photoName: e.target.value })}
-              />
+              <select
+                value={status}
+                onChange={(e) => {
+                  const next = e.target.value as Status;
+                  setStatus(next);
+                  if (next === "alive") {
+                    setU((prev) => ({ ...prev, dod: undefined }));
+                  }
+                }}
+              >
+                <option value="alive">Còn sống</option>
+                <option value="dead">Đã mất</option>
+                <option value="lock">Tạm khóa</option>
+              </select>
             </div>
           </div>
+
+          {/* Ngày mất chỉ hiện khi status = dead */}
+          {status === "dead" && (
+            <div className="fi fi--date">
+              <label>Ngày mất</label>
+              <div className="control control--with-clear">
+                <input
+                  type="date"
+                  value={u.dod || ""}
+                  onChange={(e) => setU({ ...u, dod: e.target.value })}
+                />
+                <button
+                  className="button button--ghost button--icon clear-btn"
+                  onClick={() => setU({ ...u, dod: undefined })}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Ảnh: avatar + nút chọn file (không còn input tên file) */}
+          <div className="fi" style={{ gridColumn: "1 / -1" }}>
+            <label>Ảnh</label>
+            <div
+              className="control"
+              style={{ alignItems: "flex-start", gap: 12 }}
+            >
+              <div
+                style={{
+                  width: 120,
+                  height: 120,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  background: "#f3f4f6",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="avatar"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 12, opacity: 0.6 }}>
+                    Chưa có ảnh
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  id="fileEdit"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) pickAndUpload(f);
+                  }}
+                />
+                <label htmlFor="fileEdit">
+                  <span className="button">Chọn ảnh...</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div
             className="actions actions--center actions--even"
             style={{ gridColumn: "1 / -1", marginTop: 8 }}
@@ -1359,7 +1474,7 @@ function ActivitiesTab({
       if (toCreate.length) {
         await addActivities(
           userId,
-          toCreate.map((x) => ({
+          toCreate.map((x: ActivityItem) => ({
             start_date: x.start_date || null,
             end_date: x.end_date || null,
             description: x.description || null,
@@ -1597,9 +1712,11 @@ function ActivitiesTab({
 function CreateUser({
   onCreate,
   onClose,
+  fileUrl,
 }: {
   onCreate: (u: User) => Promise<void>;
   onClose: () => void;
+  fileUrl: (p?: string | null) => string;
 }) {
   const [u, setU] = React.useState<User>({
     id: "",
@@ -1623,7 +1740,31 @@ function CreateUser({
     ],
     relationships: { children: [] },
   });
+
+  // Status cho popup Thêm
+  const [status, setStatus] = React.useState<Status>("alive");
+
   const canSubmit = (u.name || "").trim().length > 0;
+
+  // Avatar preview
+  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(
+    u.photoName ? fileUrl(u.photoName) : undefined
+  );
+
+  // Upload ảnh cho popup Thêm
+  const pickAndUpload = async (file: File) => {
+    try {
+      const filename = await uploadProfile(file);
+      setU((prev) => ({ ...prev, photoName: filename }));
+      setAvatarUrl(fileUrl(filename));
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert("Tải ảnh thất bại");
+      // eslint-disable-next-line no-console
+      console.error(e);
+    }
+  };
+
   return (
     <div className="form form-grid">
       <div className="fi">
@@ -1649,6 +1790,7 @@ function CreateUser({
           </select>
         </div>
       </div>
+
       <div className="fi fi--date">
         <label>Ngày sinh</label>
         <div className="control control--with-clear">
@@ -1665,22 +1807,7 @@ function CreateUser({
           </button>
         </div>
       </div>
-      <div className="fi fi--date">
-        <label>Ngày mất</label>
-        <div className="control control--with-clear">
-          <input
-            type="date"
-            value={u.dod || ""}
-            onChange={(e) => setU({ ...u, dod: e.target.value })}
-          />
-          <button
-            className="button button--ghost button--icon clear-btn"
-            onClick={() => setU({ ...u, dod: undefined })}
-          >
-            ✕
-          </button>
-        </div>
-      </div>
+
       <div className="fi">
         <label>Email</label>
         <div className="control">
@@ -1721,16 +1848,93 @@ function CreateUser({
           </select>
         </div>
       </div>
-      <div className="fi" style={{ gridColumn: "1 / -1" }}>
-        <label>Ảnh</label>
+
+      {/* Tình trạng dưới Vai trò */}
+      <div className="fi">
+        <label>Tình trạng</label>
         <div className="control">
-          <input
-            placeholder="Tên file ảnh"
-            value={u.photoName || ""}
-            onChange={(e) => setU({ ...u, photoName: e.target.value })}
-          />
+          <select
+            value={status}
+            onChange={(e) => {
+              const next = e.target.value as Status;
+              setStatus(next);
+              if (next === "alive") {
+                setU((prev) => ({ ...prev, dod: undefined }));
+              }
+            }}
+          >
+            <option value="alive">Còn sống</option>
+            <option value="dead">Đã mất</option>
+            <option value="lock">Tạm khóa</option>
+          </select>
         </div>
       </div>
+
+      {/* Ngày mất khi dead */}
+      {status === "dead" && (
+        <div className="fi fi--date">
+          <label>Ngày mất</label>
+          <div className="control control--with-clear">
+            <input
+              type="date"
+              value={u.dod || ""}
+              onChange={(e) => setU({ ...u, dod: e.target.value })}
+            />
+            <button
+              className="button button--ghost button--icon clear-btn"
+              onClick={() => setU({ ...u, dod: undefined })}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Ảnh + avatar preview */}
+      <div className="fi" style={{ gridColumn: "1 / -1" }}>
+        <label>Ảnh</label>
+        <div className="control" style={{ alignItems: "flex-start", gap: 12 }}>
+          <div
+            style={{
+              width: 120,
+              height: 120,
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              overflow: "hidden",
+              background: "#f3f4f6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt="avatar"
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <span style={{ fontSize: 12, opacity: 0.6 }}>Chưa có ảnh</span>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              id="fileCreate"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) pickAndUpload(f);
+              }}
+            />
+            <label htmlFor="fileCreate">
+              <span className="button">Chọn ảnh...</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div
         className="actions actions--center actions--even"
         style={{ gridColumn: "1 / -1" }}

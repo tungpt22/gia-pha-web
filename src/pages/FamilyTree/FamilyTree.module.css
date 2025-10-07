@@ -1,6 +1,7 @@
 /* Biến chiều cao đường dọc giữa các tầng – giữ đồng bộ để KHÔNG bị hở */
 :root {
-  --branch-v: 38px;
+  --branch-v: 34px; /* khoảng cách theo trục dọc giữa các tầng */
+  --line: #111827; /* màu nét */
 }
 
 * {
@@ -13,6 +14,7 @@ li {
   list-style: none;
 }
 
+/* ============== Khung tổng ============== */
 .familyWrap {
   display: flex;
   flex-direction: column;
@@ -56,47 +58,38 @@ li {
   justify-content: center;
 }
 
-/* ================== UL/LI tạo đường nối ================== */
+/* ============== UL/LI tạo đường nối ============== */
 .geneTree {
   width: max-content;
   margin: 0 auto;
 }
 
-/* Tầng con của 1 node */
+/* Tầng con của một node (UL con của LI hiện tại) */
 .geneTree ul {
   position: relative;
-  padding-top: var(--branch-v); /* khoảng dọc cha – con */
+  padding-top: var(
+    --branch-v
+  ); /* đẩy cụm con xuống – nhường chỗ cho đường dọc */
 }
 
-/* Đường dọc từ “cụm vợ/chồng” xuống thanh ngang con (ở GIỮA) */
-.couple.hasChildren::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(-1 * var(--branch-v));
-  width: 2px;
-  height: var(--branch-v);
-  background: #111827;
-}
-
-/* Mỗi con là 1 <li> – để lại khoảng phía trên cho đường dọc */
+/* Mỗi con là một <li> */
 .geneTree li {
   float: left;
   position: relative;
   text-align: center;
-  padding: var(--branch-v) 16px 0 16px; /* đẩy card xuống dưới khỏi thanh ngang */
+  padding: var(--branch-v) 16px 0 16px; /* đẩy card xuống dưới khỏi đường NGANG */
 }
 
-/* Hai nửa đường NGANG – tỏa từ trục giữa ra hai phía */
+/* --------- ĐƯỜNG NGANG (trường hợp ≥2 con) ---------
+   Vẽ “hai nửa” đường ngang từ tâm tỏa ra hai phía để mọi li ghép thành 1 đường ngang chung */
 .geneTree li::before,
 .geneTree li::after {
   content: "";
   position: absolute;
-  top: 0;
+  top: 0; /* đường ngang nằm trên cùng cụm con */
   width: 50%;
-  height: 0; /* bỏ chiều cao để tránh vẽ thêm dọc */
-  border-top: 2px solid #111827;
+  height: 0;
+  border-top: 2px solid var(--line);
 }
 .geneTree li::before {
   right: 50%;
@@ -105,31 +98,60 @@ li {
   left: 50%;
 }
 
-/* Nếu chỉ có 1 con: bỏ NGANG nhưng GIỮ đường DỌC */
-.geneTree li:only-child::before,
-.geneTree li:only-child::after {
-  display: none;
-}
-
-/* Con đầu: bỏ nửa trái của NGANG, GIỮ dọc */
+/* Con đầu/Con cuối: bỏ nửa không cần để đường ngang bắt đầu/kết thúc đúng tại hai đầu */
 .geneTree li:first-child::before {
   border-top: none;
 }
-/* Con cuối: bỏ nửa phải của NGANG, GIỮ dọc */
 .geneTree li:last-child::after {
   border-top: none;
 }
 
-/* Thanh DỌC trục giữa của cụm con – chạm chính giữa dải */
-.geneTree ul::before {
+/* --------- TRƯỜNG HỢP CHỈ 1 CON ---------
+   Khi chỉ có 1 con: bỏ đường NGANG; vẫn giữ một đường DỌC duy nhất từ cha tới con */
+.geneTree li:only-child::before,
+.geneTree li:only-child::after {
+  display: none; /* bỏ ngang */
+}
+.geneTree ul.onlyOne {
+  /* UL chứa đúng 1 LI */
+  padding-top: 0; /* không cần khoảng dọc cho đường ngang */
+}
+
+/* Đường DỌC rơi xuống từng node con – dùng pseudo của .couple ở con
+   (đặt trên chính .couple của con để luôn chạm mép trên card con) */
+.childCouple::before {
   content: "";
   position: absolute;
-  top: 0;
+  top: calc(-1 * var(--branch-v)); /* bắt đầu ngay từ đường ngang phía trên */
   left: 50%;
   transform: translateX(-50%);
-  width: 0;
-  height: var(--branch-v);
-  border-left: 2px solid #111827;
+  width: 2px;
+  height: var(--branch-v); /* đúng bằng khoảng cách tới mép trên card con */
+  background: var(--line);
+}
+
+/* Với 1 con: cần một đường DỌC duy nhất nối trực tiếp cha ↔ con
+   Tăng chiều dài đoạn dọc của con thêm 1 nhịp để chạm thẳng từ cha xuống con */
+.onlyOne > li > .childCouple::before {
+  height: calc(var(--branch-v) * 2); /* cha→(1 nhịp)→đầu UL + UL→con (1 nhịp) */
+}
+
+/* --------- ĐƯỜNG DỌC từ cụm cha xuống khu con ---------
+   Chỉ vẽ 1 đường dọc trung tâm ở ngay dưới cụm cha.
+   LƯU Ý: KHÔNG vẽ thêm ul::before để tránh bị “2 đường chồng nhau”. */
+.couple.hasChildren::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(-1 * var(--branch-v));
+  width: 2px;
+  height: var(--branch-v); /* nối xuống tới mép trên của vùng con */
+  background: var(--line);
+}
+/* Trường hợp chỉ 1 con: kéo dài thêm 1 nhịp để chạm thẳng mép trên card con */
+.couple.hasOneChild::after {
+  height: calc(var(--branch-v) * 2);
 }
 
 /* Clear float */
@@ -140,7 +162,7 @@ li {
   clear: both;
 }
 
-/* ================== Cụm vợ chồng + Card ================== */
+/* ============== Cụm vợ chồng + Card ============== */
 .couple {
   display: inline-flex;
   gap: 12px;
@@ -148,7 +170,6 @@ li {
   justify-content: center;
   position: relative;
 }
-
 .card {
   width: 180px;
   min-height: 82px;
@@ -184,7 +205,7 @@ li {
   cursor: pointer;
 }
 
-/* ================== Popup ================== */
+/* ============== Popup ============== */
 .modalBackdrop {
   position: fixed;
   inset: 0;

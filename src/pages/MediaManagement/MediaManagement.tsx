@@ -13,7 +13,7 @@ import {
   deletePhoto,
   type AlbumDto,
   type PhotoDto,
-} from "../../api/albumsApi";
+} from "./mediaApi";
 
 // ===== Helpers =====
 function cx(...parts: Array<string | false | undefined>) {

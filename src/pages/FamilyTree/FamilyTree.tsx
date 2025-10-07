@@ -1,110 +1,117 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import styles from "./FamilyTree.module.css";
-
-// GIỮ API CŨ: trả về trực tiếp RawPersonRef[] (không .data)
-import { fetchFamilyTree } from "../../api/familyTreeApi";
+import { fetchFamilyTree } from "./familyTreeApi";
 
 export interface RawPersonRef {
   id: string;
   name: string;
-  relation?: string; // "Vợ" | "Chồng" | "Con" ...
+  relation?: string;
   spouses?: RawPersonRef[];
   children?: RawPersonRef[];
 }
 
-/* Chọn gốc: ưu tiên "Cụ 1", sau đó node có (spouses + children) nhiều nhất */
-function pickRoot(people: RawPersonRef[]): RawPersonRef | null {
-  if (!people || people.length === 0) return null;
-  const cue1 = people.find((p) => p.name === "Cụ 1");
-  if (cue1) return cue1;
-  let best = people[0];
-  let bestScore = (best.spouses?.length ?? 0) + (best.children?.length ?? 0);
-  for (const p of people) {
-    const s = (p.spouses?.length ?? 0) + (p.children?.length ?? 0);
-    if (s > bestScore) {
-      best = p;
-      bestScore = s;
+/* --- chọn root: cây lớn nhất, nếu hòa thì ưu tiên tên 'Cụ 1' --- */
+function collectIds(p: RawPersonRef, s: Set<string>) {
+  if (s.has(p.id)) return;
+  s.add(p.id);
+  (p.spouses ?? []).forEach((m) => collectIds(m, s));
+  (p.children ?? []).forEach((c) => collectIds(c, s));
+}
+function pickRoot(arr: RawPersonRef[]): RawPersonRef | null {
+  if (!arr?.length) return null;
+  const hasParent = new Set<string>();
+  arr.forEach((p) => (p.children ?? []).forEach((c) => hasParent.add(c.id)));
+  const candidates = arr.filter((p) => !hasParent.has(p.id));
+  const list = candidates.length ? candidates : arr;
+
+  let best = list[0];
+  let bestSize = 0;
+  for (const r of list) {
+    const set = new Set<string>();
+    collectIds(r, set);
+    if (set.size > bestSize || (set.size === bestSize && r.name === "Cụ 1")) {
+      best = r;
+      bestSize = set.size;
     }
   }
   return best;
 }
 
-/* Ưu tiên nhãn Vợ/Chồng nếu có spouses, không thì mới dùng "Con" */
-function computeRole(person: RawPersonRef): string | undefined {
-  const mates = person.spouses ?? [];
-  const hasWife = mates.some((m) =>
+function roleOf(p: RawPersonRef): string | undefined {
+  const sps = p.spouses ?? [];
+  const hasWife = sps.some((m) =>
     (m.relation ?? "").toLowerCase().includes("vợ")
   );
-  const hasHusband = mates.some((m) =>
+  const hasHusband = sps.some((m) =>
     (m.relation ?? "").toLowerCase().includes("chồng")
   );
   if (hasWife) return "Chồng";
   if (hasHusband) return "Vợ";
-  // không có vợ/chồng → có thể hiển thị "Con"
-  if ((person.relation ?? "").toLowerCase().includes("con")) return "Con";
-  // nếu bản thân có relation là Vợ/Chồng thì hiển thị luôn
-  if ((person.relation ?? "").toLowerCase().includes("vợ")) return "Vợ";
-  if ((person.relation ?? "").toLowerCase().includes("chồng")) return "Chồng";
+
+  const rel = (p.relation ?? "").toLowerCase();
+  if (rel.includes("vợ")) return "Vợ";
+  if (rel.includes("chồng")) return "Chồng";
+  if (rel.includes("con")) return "Con";
   return undefined;
 }
 
-/* Gọi API chi tiết */
-async function fetchUserDetail(userId: string) {
+/* detail API */
+async function fetchUserDetail(id: string) {
   const token =
     localStorage.getItem("access_token") || localStorage.getItem("token") || "";
-  const res = await fetch(`http://localhost:3000/api/v1/users/${userId}`, {
+  const res = await fetch(`http://localhost:3000/api/v1/users/${id}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) throw new Error(`Fetch detail failed: ${res.status}`);
-  const json = await res.json();
-  return json.data;
+  const j = await res.json();
+  return j?.data ?? null;
 }
 
-/* Thẻ hiển thị 1 người (không avatar) */
 function PersonCard({
-  person,
+  p,
   onView,
 }: {
-  person: RawPersonRef;
+  p: RawPersonRef;
   onView: (id: string) => void;
 }) {
-  const role = computeRole(person);
   return (
-    <div className={styles.card} title={person.name}>
-      <div className={styles.name}>{person.name}</div>
-      <div className={styles.role}>{role ?? ""}</div>
-      <button className={styles.view} onClick={() => onView(person.id)}>
+    <div className={styles.card} title={p.name}>
+      <div className={styles.name}>{p.name}</div>
+      <div className={styles.role}>{roleOf(p) ?? ""}</div>
+      <button className={styles.view} onClick={() => onView(p.id)}>
         Xem
       </button>
     </div>
   );
 }
 
-/* 1 node: cụm vợ/chồng (ngang) + con (dọc) */
-function RenderNode({
-  node,
+function Node({
+  n,
   onView,
 }: {
-  node: RawPersonRef;
+  n: RawPersonRef;
   onView: (id: string) => void;
 }) {
-  const hasChildren = (node.children?.length ?? 0) > 0;
+  const childCount = n.children?.length ?? 0;
+  const hasChildren = childCount > 0;
+  const hasOneChild = childCount === 1;
 
   return (
     <li>
       <div
-        className={`${styles.couple} ${hasChildren ? styles.hasChildren : ""}`}
+        className={`${styles.couple} ${hasChildren ? styles.hasChildren : ""} ${
+          hasOneChild ? styles.hasOneChild : ""
+        }`}
       >
-        <PersonCard person={node} onView={onView} />
-        {(node.spouses ?? []).map((sp) => (
-          <PersonCard key={sp.id} person={sp} onView={onView} />
+        <PersonCard p={n} onView={onView} />
+        {(n.spouses ?? []).map((sp) => (
+          <PersonCard key={sp.id} p={sp} onView={onView} />
         ))}
       </div>
 
       {hasChildren && (
-        <ul>
-          {(node.children ?? []).map((child) => (
-            <RenderNode key={child.id} node={child} onView={onView} />
+        <ul className={hasOneChild ? styles.onlyOne : ""}>
+          {(n.children ?? []).map((c) => (
+            <Child key={c.id} n={c} onView={onView} />
           ))}
         </ul>
       )}
@@ -112,34 +119,52 @@ function RenderNode({
   );
 }
 
-/* Popup chi tiết */
-function DetailModal({
+function Child({
+  n,
+  onView,
+}: {
+  n: RawPersonRef;
+  onView: (id: string) => void;
+}) {
+  const childCount = n.children?.length ?? 0;
+  const hasChildren = childCount > 0;
+  const hasOneChild = childCount === 1;
+
+  return (
+    <li>
+      <div className={`${styles.couple} ${styles.childCouple}`}>
+        <PersonCard p={n} onView={onView} />
+        {(n.spouses ?? []).map((sp) => (
+          <PersonCard key={sp.id} p={sp} onView={onView} />
+        ))}
+      </div>
+
+      {hasChildren && (
+        <ul className={hasOneChild ? styles.onlyOne : ""}>
+          {(n.children ?? []).map((c) => (
+            <Child key={c.id} n={c} onView={onView} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/* Modal */
+function Modal({
   open,
   onClose,
-  detail,
+  data,
 }: {
   open: boolean;
   onClose: () => void;
-  detail: Partial<{
-    id: string;
-    name: string;
-    gender: string;
-    email: string;
-    phone_number: string;
-    address: string;
-    birthday: string;
-    death_day: string | null;
-    profile_img: string | null;
-  }> | null;
+  data: any;
 }) {
   if (!open) return null;
-  const fullImg = detail?.profile_img
-    ? `http://localhost:3000/${detail.profile_img}`
+  const img = data?.profile_img
+    ? `http://localhost:3000/${data.profile_img}`
     : null;
-  const status = detail?.death_day
-    ? `Đã mất ngày ${detail.death_day}`
-    : "Còn sống";
-
+  const status = data?.death_day ? `Đã mất ngày ${data.death_day}` : "Còn sống";
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -149,42 +174,38 @@ function DetailModal({
             ✕
           </button>
         </div>
-
         <div className={styles.modalBody}>
           <div className={styles.modalAvatar}>
-            {fullImg ? (
-              // eslint-disable-next-line jsx-a11y/alt-text
-              <img src={fullImg} />
+            {img ? (
+              <img src={img} alt="" />
             ) : (
               <div className={styles.noImage}>Không có hình ảnh</div>
             )}
           </div>
-
           <div className={styles.modalInfo}>
             <div>
-              <b>Họ tên:</b> {detail?.name ?? "—"}
+              <b>Họ tên:</b> {data?.name ?? "—"}
             </div>
             <div>
-              <b>Giới tính:</b> {detail?.gender ?? "—"}
+              <b>Giới tính:</b> {data?.gender ?? "—"}
             </div>
             <div>
-              <b>Email:</b> {detail?.email ?? "—"}
+              <b>Email:</b> {data?.email ?? "—"}
             </div>
             <div>
-              <b>Số điện thoại:</b> {detail?.phone_number ?? "—"}
+              <b>Điện thoại:</b> {data?.phone_number ?? "—"}
             </div>
             <div>
-              <b>Địa chỉ:</b> {detail?.address ?? "—"}
+              <b>Địa chỉ:</b> {data?.address ?? "—"}
             </div>
             <div>
-              <b>Ngày sinh:</b> {detail?.birthday ?? "—"}
+              <b>Ngày sinh:</b> {data?.birthday ?? "—"}
             </div>
             <div>
               <b>Tình trạng:</b> {status}
             </div>
           </div>
         </div>
-
         <div className={styles.modalFooter}>
           <button className={styles.view} onClick={onClose}>
             Đóng
@@ -197,75 +218,82 @@ function DetailModal({
 
 const FamilyTree: React.FC = () => {
   const [root, setRoot] = useState<RawPersonRef | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const [openModal, setOpenModal] = useState(false);
+  const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<any>(null);
 
   useEffect(() => {
-    let mounted = true;
+    let live = true;
     (async () => {
-      try {
-        const people: RawPersonRef[] = await fetchFamilyTree(); // GIỮ cách gọi cũ
-        if (!mounted) return;
-        setRoot(pickRoot(people));
-      } catch (e) {
-        console.error("Lỗi tải family tree:", e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
+      const data: RawPersonRef[] = await fetchFamilyTree();
+      if (!live) return;
+      setRoot(pickRoot(data));
     })();
     return () => {
-      mounted = false;
+      live = false;
     };
   }, []);
 
-  async function handleView(id: string) {
-    try {
-      const d = await fetchUserDetail(id);
-      setDetail(d);
-      setOpenModal(true);
-    } catch (e) {
-      console.error(e);
-      setDetail(null);
-      setOpenModal(true);
-    }
-  }
+  const onView = async (id: string) => {
+    const d = await fetchUserDetail(id);
+    setDetail(d);
+    setOpen(true);
+  };
 
-  function nudge(dx: number, dy: number) {
-    const scroller = document.querySelector<HTMLElement>(`.${styles.treeWrap}`);
-    if (!scroller) return;
-    scroller.scrollBy({ left: dx, top: dy, behavior: "smooth" });
-  }
-
-  if (loading) return <div>Đang tải cây…</div>;
-  if (!root) return <div>Không có dữ liệu cây.</div>;
+  if (!root) return <div>Đang tải dữ liệu cây.</div>;
 
   return (
     <div className={styles.familyWrap}>
       <div className={styles.ftToolbar}>
         <span className={styles.ftZoomLabel}>Cây gia đình</span>
         <div className={styles.arrows}>
-          <button onClick={() => nudge(-200, 0)}>◀</button>
-          <button onClick={() => nudge(200, 0)}>▶</button>
-          <button onClick={() => nudge(0, -200)}>▲</button>
-          <button onClick={() => nudge(0, 200)}>▼</button>
+          <button
+            onClick={() =>
+              document
+                .querySelector(`.${styles.treeWrap}`)
+                ?.scrollBy({ left: -220, behavior: "smooth" })
+            }
+          >
+            ◀
+          </button>
+          <button
+            onClick={() =>
+              document
+                .querySelector(`.${styles.treeWrap}`)
+                ?.scrollBy({ left: 220, behavior: "smooth" })
+            }
+          >
+            ▶
+          </button>
+          <button
+            onClick={() =>
+              document
+                .querySelector(`.${styles.treeWrap}`)
+                ?.scrollBy({ top: -220, behavior: "smooth" })
+            }
+          >
+            ▲
+          </button>
+          <button
+            onClick={() =>
+              document
+                .querySelector(`.${styles.treeWrap}`)
+                ?.scrollBy({ top: 220, behavior: "smooth" })
+            }
+          >
+            ▼
+          </button>
         </div>
       </div>
 
       <div className={styles.treeWrap}>
         <div className={styles.ftCanvas}>
           <ul className={styles.geneTree}>
-            <RenderNode node={root} onView={handleView} />
+            <Node n={root} onView={onView} />
           </ul>
         </div>
       </div>
 
-      <DetailModal
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        detail={detail}
-      />
+      <Modal open={open} onClose={() => setOpen(false)} data={detail} />
     </div>
   );
 };

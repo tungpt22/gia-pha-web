@@ -121,7 +121,7 @@
 }
 .users-tr {
   background: #fff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb !important;
   border-radius: 12px;
   display: grid;
   grid-template-columns: 2.2fr 100px 140px 160px 2.5fr 160px;

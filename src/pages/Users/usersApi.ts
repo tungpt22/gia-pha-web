@@ -349,3 +349,22 @@ export async function getUserById(id: string): Promise<UserDetail | null> {
     phone_number: x.phone_number ?? null,
   }));
 }
+
+export async function uploadProfile(file: File): Promise<string> {
+  const token = getAccessToken();
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API_BASE}/upload/profile`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: fd,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+  }
+  const json = await res.json();
+  const filename = json?.data?.filename;
+  if (!filename) throw new Error("Phản hồi không có data.filename");
+  return filename as string;
+}

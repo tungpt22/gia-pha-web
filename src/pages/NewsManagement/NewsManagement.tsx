@@ -1,5 +1,5 @@
-// File: NewsManagement.tsx
-import * as React from "react";
+// NewsManagement.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./NewsManagement.css";
 import {
   listNews,
@@ -8,444 +8,387 @@ import {
   deleteNews,
   getNews,
   uploadFile,
-  toAbsoluteFileUrl,
-  toAbsoluteThumbUrl,
-  type NewsDto,
-  type NewsCreateRequest,
-  type NewsUpdateRequest,
+  bulkPatch,
+  fetchNewsPageHtml,
 } from "./newsApi";
+import type { NewsPayload } from "./newsApi";
+import { Editor } from "@tinymce/tinymce-react";
 
-/* ============== Utils ============== */
-function cx(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-const buildPageList = (totalPages: number, current: number) => {
-  const pages: (number | string)[] = [];
-  const w = 1;
-  if (totalPages <= 7) for (let i = 1; i <= totalPages; i++) pages.push(i);
-  else {
-    pages.push(1);
-    if (current - w > 2) pages.push("…");
-    for (
-      let i = Math.max(2, current - w);
-      i <= Math.min(totalPages - 1, current + w);
-      i++
-    )
-      pages.push(i);
-    if (current + w < totalPages - 1) pages.push("…");
-    pages.push(totalPages);
-  }
-  return pages;
+/* ======= TinyMCE self-host (không cần API key, không hiện overlay) ======= */
+import "tinymce/tinymce";
+import "tinymce/icons/default";
+import "tinymce/themes/silver";
+import "tinymce/models/dom";
+import "tinymce/plugins/advlist";
+import "tinymce/plugins/autolink";
+import "tinymce/plugins/lists";
+import "tinymce/plugins/link";
+import "tinymce/plugins/image";
+import "tinymce/plugins/charmap";
+import "tinymce/plugins/preview";
+import "tinymce/plugins/anchor";
+import "tinymce/plugins/searchreplace";
+import "tinymce/plugins/visualblocks";
+import "tinymce/plugins/code";
+import "tinymce/plugins/fullscreen";
+import "tinymce/plugins/insertdatetime";
+import "tinymce/plugins/media";
+import "tinymce/plugins/table";
+import "tinymce/plugins/help";
+import "tinymce/plugins/wordcount";
+import "tinymce/plugins/quickbars";
+import "tinymce/plugins/autoresize";
+/* ======================================================================= */
+
+type Row = {
+  id: string;
+  title: string;
+  content: string;
+  thumbnail?: string | null;
+  is_publish: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
-/* ============== Simple Modals (message / confirm / image) ============== */
-function MessageModal({
-  message,
-  onClose,
-}: {
-  message: string;
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal small" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div className="modal-title">Thông báo</div>
-        </div>
-        <div className="modal-body">
-          <div className="msg">{message}</div>
-          <div className="modal-footer-center">
-            <button className="button button--primary" onClick={onClose}>
-              OK
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-function ConfirmModal({
-  text,
-  onOk,
-  onCancel,
-}: {
-  text: string;
-  onOk: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal small" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div className="modal-title">Xác nhận</div>
-        </div>
-        <div className="modal-body">
-          <div className="msg">{text}</div>
-          <div className="modal-footer-center">
-            <button className="button" onClick={onCancel}>
-              Hủy
-            </button>
-            <button className="button button--primary" onClick={onOk}>
-              Đồng ý
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-function ImageModal({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="image-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="image-close" onClick={onClose} title="Đóng">
-          ×
-        </button>
-        <img src={src} alt="thumbnail" />
-      </div>
-    </div>
+const FILE_BASE = "http://localhost:3000";
+const toFileUrl = (path?: string | null) =>
+  !path
+    ? null
+    : path.startsWith("/")
+    ? `${FILE_BASE}${path}`
+    : `${FILE_BASE}/${path}`;
+
+/** Chế độ màn hình */
+type Mode =
+  | { kind: "list" }
+  | { kind: "create" }
+  | { kind: "edit"; id: string };
+
+export default function NewsManagement() {
+  const [mode, setMode] = useState<Mode>({ kind: "list" });
+
+  return mode.kind === "list" ? (
+    <ListView
+      onCreate={() => setMode({ kind: "create" })}
+      onEdit={(id) => setMode({ kind: "edit", id })}
+    />
+  ) : (
+    <EditorPage mode={mode} onBack={() => setMode({ kind: "list" })} />
   );
 }
 
-/* ============== Rich Editor (contenteditable + toolbar) ============== */
-function RichEditor({
-  value,
-  onChange,
-  onUploadImage,
+/* ================== LIST VIEW ================== */
+function ListView({
+  onCreate,
+  onEdit,
 }: {
-  value: string;
-  onChange: (html: string) => void;
-  onUploadImage: (file: File) => Promise<string>; // return absolute URL
+  onCreate: () => void;
+  onEdit: (id: string) => void;
 }) {
-  const ref = React.useRef<HTMLDivElement | null>(null);
-  const inputFileRef = React.useRef<HTMLInputElement | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  React.useEffect(() => {
-    if (ref.current && ref.current.innerHTML !== value) {
-      ref.current.innerHTML = value || "";
-    }
-  }, [value]);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(total / limit)),
+    [total, limit]
+  );
 
-  const exec = (cmd: string, arg?: string) => {
-    document.execCommand(cmd, false, arg);
-    if (ref.current) onChange(ref.current.innerHTML);
-  };
-  const formatBlock = (tag: string) => exec("formatBlock", tag);
-  const handleInput = () => {
-    if (ref.current) onChange(ref.current.innerHTML);
-  };
-  const createLink = () => {
-    const url = prompt("Nhập URL liên kết:");
-    if (!url) return;
-    exec("createLink", url);
-  };
-  const removeLink = () => exec("unlink");
-
-  const handlePickImage = () => inputFileRef.current?.click();
-  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.currentTarget.files?.[0];
-    if (!file) return;
+  async function load() {
+    setLoading(true);
     try {
-      const url = await onUploadImage(file);
-      exec("insertImage", url);
-      if (ref.current) {
-        const imgs = ref.current.querySelectorAll("img");
-        const last = imgs[imgs.length - 1];
-        if (last) last.setAttribute("style", "max-width:100%;height:auto;");
+      const data = await listNews(page, limit, search);
+      setRows(data?.data?.data || []);
+      setTotal(data?.data?.total || 0);
+      setSelected(new Set());
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  async function openNewsPage(id: string) {
+    const w = window.open("", "_blank");
+    try {
+      const html: string = await fetchNewsPageHtml(id); // <- gán kiểu rõ ràng
+      if (!w) return;
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } catch (e: any) {
+      if (w) w.close();
+      if (String(e?.message).includes("Unauthorized")) {
+        alert("Bạn không có quyền hoặc phiên hết hạn. Vui lòng đăng nhập lại.");
+        window.location.href = "/login";
+      } else {
+        alert("Không mở được trang tin tức.");
       }
-    } finally {
-      e.currentTarget.value = "";
     }
-  };
+  }
 
   return (
-    <div className="editor">
-      <div className="toolbar nowrap">
-        {/* font family (nhỏ) */}
-        <select
-          className="tb tb--sm"
-          onChange={(e) => exec("fontName", e.target.value)}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            Font
-          </option>
-          <option>Arial</option>
-          <option>Times New Roman</option>
-          <option>Tahoma</option>
-          <option>Verdana</option>
-          <option>Courier New</option>
-          <option>Georgia</option>
-          <option>Roboto</option>
-        </select>
-        {/* font size (nhỏ) */}
-        <select
-          className="tb tb--sm"
-          onChange={(e) => exec("fontSize", e.target.value)}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            Cỡ
-          </option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-          <option value="6">6</option>
-          <option value="7">7</option>
-        </select>
-        {/* heading (nhỏ) */}
-        <select
-          className="tb tb--sm"
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v) formatBlock(v as any);
-            e.currentTarget.value = "";
-          }}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            H
-          </option>
-          <option value="P">P</option>
-          <option value="H1">H1</option>
-          <option value="H2">H2</option>
-          <option value="H3">H3</option>
-          <option value="H4">H4</option>
-          <option value="BLOCKQUOTE">BQ</option>
-          <option value="PRE">PRE</option>
-        </select>
+    <div className="nm-wrap">
+      <div className="nm-head">
+        <div className="page-title">Quản lý tin tức</div>
 
-        <button className="tb" title="Đậm" onClick={() => exec("bold")}>
-          <b>B</b>
-        </button>
-        <button className="tb" title="Nghiêng" onClick={() => exec("italic")}>
-          <i>I</i>
-        </button>
-        <button
-          className="tb"
-          title="Gạch chân"
-          onClick={() => exec("underline")}
-        >
-          <u>U</u>
-        </button>
-        <button
-          className="tb"
-          title="Gạch ngang"
-          onClick={() => exec("strikeThrough")}
-        >
-          <s>S</s>
-        </button>
+        <div className="nm-actions">
+          <div className="nm-search">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Tìm theo tiêu đề..."
+            />
+            <button
+              className="btn"
+              onClick={() => {
+                setPage(1);
+                load();
+              }}
+            >
+              Tìm kiếm
+            </button>
+          </div>
 
-        <label className="tb color">
-          A
-          <input
-            type="color"
-            onChange={(e) => exec("foreColor", e.target.value)}
-          />
-        </label>
-        <label className="tb color">
-          ⬛
-          <input
-            type="color"
-            onChange={(e) => exec("hiliteColor", e.target.value)}
-          />
-        </label>
-
-        <button
-          className="tb"
-          title="• List"
-          onClick={() => exec("insertUnorderedList")}
-        >
-          •
-        </button>
-        <button
-          className="tb"
-          title="1. List"
-          onClick={() => exec("insertOrderedList")}
-        >
-          1.
-        </button>
-        <button className="tb" title="Thụt vào" onClick={() => exec("indent")}>
-          ↦
-        </button>
-        <button className="tb" title="Lùi ra" onClick={() => exec("outdent")}>
-          ↤
-        </button>
-
-        <button className="tb" title="Trái" onClick={() => exec("justifyLeft")}>
-          ⬅
-        </button>
-        <button
-          className="tb"
-          title="Giữa"
-          onClick={() => exec("justifyCenter")}
-        >
-          ↔
-        </button>
-        <button
-          className="tb"
-          title="Phải"
-          onClick={() => exec("justifyRight")}
-        >
-          ➡
-        </button>
-        <button className="tb" title="Đều" onClick={() => exec("justifyFull")}>
-          ≡
-        </button>
-
-        <button className="tb" title="Liên kết" onClick={createLink}>
-          🔗
-        </button>
-        <button className="tb" title="Bỏ liên kết" onClick={removeLink}>
-          ⛓️
-        </button>
-
-        <button className="tb" title="Chèn ảnh" onClick={handlePickImage}>
-          🖼️
-        </button>
-        <input
-          ref={inputFileRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={onFileChange}
-        />
-
-        <button
-          className="tb"
-          title="Xóa định dạng"
-          onClick={() => exec("removeFormat")}
-        >
-          ⌫
-        </button>
-        <button className="tb" title="Hoàn tác" onClick={() => exec("undo")}>
-          ↶
-        </button>
-        <button className="tb" title="Làm lại" onClick={() => exec("redo")}>
-          ↷
-        </button>
+          <div className="nm-bulk">
+            <button
+              className="btn"
+              disabled={selected.size === 0}
+              onClick={async () => {
+                await bulkPatch(Array.from(selected), { is_publish: true });
+                load();
+              }}
+            >
+              Công bố
+            </button>
+            <button
+              className="btn"
+              disabled={selected.size === 0}
+              onClick={async () => {
+                await bulkPatch(Array.from(selected), { is_publish: false });
+                load();
+              }}
+            >
+              Hủy Công bố
+            </button>
+            <button className="btn btn-primary" onClick={onCreate}>
+              + Thêm tin tức
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div
-        ref={ref}
-        className="editor-area"
-        contentEditable
-        suppressContentEditableWarning
-        onInput={handleInput}
-      />
+      <div className="nm-table">
+        <div className="nm-row nm-row--head">
+          <div className="nm-col nm-col--check">
+            <input
+              type="checkbox"
+              checked={
+                selected.size > 0 && rows.every((r) => selected.has(r.id))
+              }
+              onChange={(e) => {
+                const set = new Set<string>();
+                if (e.target.checked) rows.forEach((r) => set.add(r.id));
+                setSelected(set);
+              }}
+            />
+          </div>
+          <div className="nm-col nm-col--title">Tiêu đề</div>
+          <div className="nm-col nm-col--pub">Công bố</div>
+          <div className="nm-col nm-col--date">Ngày tạo</div>
+          <div className="nm-col nm-col--date">Ngày thay đổi</div>
+          <div className="nm-col nm-col--act">Thao tác</div>
+        </div>
+
+        {loading ? (
+          <div className="nm-empty">Đang tải…</div>
+        ) : rows.length === 0 ? (
+          <div className="nm-empty">Chưa có bài viết</div>
+        ) : (
+          rows.map((r) => (
+            <div key={r.id} className="nm-row">
+              <div className="nm-col nm-col--check">
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.id)}
+                  onChange={(e) => {
+                    const set = new Set(selected);
+                    if (e.target.checked) set.add(r.id);
+                    else set.delete(r.id);
+                    setSelected(set);
+                  }}
+                />
+              </div>
+              <div className="nm-col nm-col--title ellipsis">{r.title}</div>
+              <div className="nm-col nm-col--pub">
+                {r.is_publish ? "Có" : "Không"}
+              </div>
+              <div className="nm-col nm-col--date">
+                {(r.created_at || "").slice(0, 10)}
+              </div>
+              <div className="nm-col nm-col--date">
+                {(r.updated_at || "").slice(0, 10)}
+              </div>
+              <div className="nm-col nm-col--act">
+                <button className="btn" onClick={() => onEdit(r.id)}>
+                  Sửa
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={async () => {
+                    if (!window.confirm("Xóa bài viết này?")) return;
+                    await deleteNews(r.id);
+                    load();
+                  }}
+                >
+                  Xóa
+                </button>
+                <button className="btn" onClick={() => openNewsPage(r.id)}>
+                  Xem
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Phân trang giao diện cũ (nút số tròn – căn giữa) */}
+      <div className="nm-paging old-style">
+        <button
+          className="pg"
+          disabled={page <= 1}
+          onClick={() => setPage(1)}
+          aria-label="Trang đầu"
+        >
+          «
+        </button>
+        <button
+          className="pg"
+          disabled={page <= 1}
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          aria-label="Trang trước"
+        >
+          ‹
+        </button>
+
+        <div className="pg-list">
+          {Array.from({ length: Math.max(1, totalPages) }).map((_, i) => {
+            const idx = i + 1;
+            return (
+              <button
+                key={idx}
+                className={`pg-num ${idx === page ? "active" : ""}`}
+                onClick={() => setPage(idx)}
+              >
+                {idx}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          className="pg"
+          disabled={page >= totalPages}
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          aria-label="Trang sau"
+        >
+          ›
+        </button>
+        <button
+          className="pg"
+          disabled={page >= totalPages}
+          onClick={() => setPage(totalPages)}
+          aria-label="Trang cuối"
+        >
+          »
+        </button>
+
+        <span className="nm-total">
+          Trang {page}/{totalPages} • Tổng {total} bản ghi
+        </span>
+      </div>
     </div>
   );
 }
 
-/* ============== Editor "trang riêng" (không popup) ============== */
-function NewsEditorPage({
-  mode,
-  initial,
-  onSave,
-  onBack,
-}: {
-  mode: "create" | "edit";
-  initial?: Partial<NewsDto>;
-  onSave: (payload: NewsCreateRequest | NewsUpdateRequest) => void;
-  onBack: () => void;
-}) {
-  const [title, setTitle] = React.useState(initial?.title ?? "");
-  const [isPublish, setIsPublish] = React.useState<boolean>(
-    !!initial?.is_publish
-  );
-  const [thumbnail, setThumbnail] = React.useState<string | null | undefined>(
-    initial?.thumbnail ?? undefined
-  );
-  const [thumbName, setThumbName] = React.useState<string | null>(null); // ✅ hiện tên file sau upload
-  const [content, setContent] = React.useState<string>(initial?.content ?? "");
+/* ================== EDITOR PAGE ================== */
+function EditorPage({ mode, onBack }: { mode: Mode; onBack: () => void }) {
+  const [title, setTitle] = useState("");
+  const [isPublish, setIsPublish] = useState(true);
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const [thumbName, setThumbName] = useState<string>("");
+  const [summary, setSummary] = useState<string>("");
+  const [content, setContent] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const editorRef = useRef<any>(null);
 
-  const [confirmBack, setConfirmBack] = React.useState(false);
-  const [thumbPreview, setThumbPreview] = React.useState<string | null>(null);
-  const [uploading, setUploading] = React.useState(false);
-  const thumbInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  // nếu vào Sửa đã có thumbnail -> hiển thị tên tệp suy từ path
-  React.useEffect(() => {
-    if (initial?.thumbnail && !thumbName) {
-      const base = initial.thumbnail.split("/").pop() || initial.thumbnail;
-      setThumbName(base);
+  useEffect(() => {
+    if (mode.kind === "edit") {
+      (async () => {
+        const data = await getNews(mode.id);
+        const n = data?.data;
+        setTitle(n?.title || "");
+        setIsPublish(!!n?.is_publish);
+        setContent(n?.content || "");
+        setThumbnail(n?.thumbnail || null);
+        setThumbName(n?.thumbnail || "");
+      })();
     }
-  }, [initial?.thumbnail, thumbName]);
+  }, [mode]);
 
-  const canSave = title.trim() !== "" && content.trim() !== "";
-
-  const onUploadThumb = async (file: File) => {
-    setUploading(true);
+  async function handleSave() {
+    setBusy(true);
     try {
-      const up = await uploadFile(file);
-      // ✅ lưu filename vào thumbnail & hiện tên file (originalname)
-      setThumbnail(up.filename);
-      setThumbName(
-        up.originalname || up.filename.split("/").pop() || up.filename
-      );
-      // clear input để có thể chọn lại cùng 1 file
-      if (thumbInputRef.current) thumbInputRef.current.value = "";
+      const payload: NewsPayload = {
+        title,
+        content,
+        thumbnail: thumbnail || undefined,
+        is_publish: isPublish,
+      };
+      if (mode.kind === "create") await createNews(payload);
+      else if (mode.kind === "edit") await updateNews(mode.id, payload);
+      onBack();
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
-  };
-
-  const onUploadImageInContent = async (file: File) => {
-    const up = await uploadFile(file);
-    return toAbsoluteFileUrl(up.filename)!;
-  };
-
-  const openThumbPreview = () => {
-    const url = toAbsoluteThumbUrl(thumbnail || undefined);
-    if (url) setThumbPreview(url);
-  };
-
-  const handlePickThumb = () => thumbInputRef.current?.click();
-  const onThumbFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.currentTarget.files?.[0];
-    if (f) onUploadThumb(f);
-  };
+  }
 
   return (
-    <div className="editor-page">
-      <div className="editor-head">
+    <div className="nm-editor">
+      <div className="nm-ed-head">
         <button
-          className="button"
-          onClick={() => setConfirmBack(true)}
-          title="Quay lại danh sách"
+          className="btn"
+          onClick={() => {
+            if (window.confirm("Bạn có muốn thoát không?")) onBack();
+          }}
         >
           ← Quay lại
         </button>
-        <div className="spacer" />
-        <button
-          className="button button--primary"
-          disabled={!canSave}
-          onClick={() =>
-            onSave({
-              title: title.trim(),
-              content,
-              thumbnail: thumbnail || null, // lưu filename
-              is_publish: isPublish,
-            })
-          }
-        >
-          Lưu
-        </button>
+        <div className="nm-ed-title">
+          {mode.kind === "create" ? "Thêm tin tức" : "Sửa tin tức"}
+        </div>
+        <div className="nm-ed-gap" />
       </div>
 
-      <div className="news-form">
-        <div className="row">
-          <div className="fi">
-            <label>Tiêu đề</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Nhập tiêu đề…"
-            />
-          </div>
-          <div className="fi">
+      <div className="nm-ed-form">
+        <div className="f-row">
+          <label>Tiêu đề</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Nhập tiêu đề..."
+          />
+        </div>
+
+        <div className="f-row two">
+          <div>
             <label>Công bố</label>
             <select
               value={isPublish ? "1" : "0"}
@@ -455,512 +398,135 @@ function NewsEditorPage({
               <option value="0">Không</option>
             </select>
           </div>
-        </div>
 
-        <div className="row">
-          <div className="fi">
+          <div className="f-upload">
             <label>Hình thu nhỏ</label>
-            <div className="hstack">
-              {/* ✅ input file ẨN để không còn "Không có tệp nào được chọn" của trình duyệt */}
+            <div className="upload-row">
               <input
-                ref={thumbInputRef}
                 type="file"
                 accept="image/*"
-                style={{ display: "none" }}
-                onChange={onThumbFileChange}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const res = await uploadFile(f);
+                  setThumbnail(res.data.filename);
+                  setThumbName(res.data.originalname);
+                }}
               />
-              <button
-                type="button"
-                className="button"
-                onClick={handlePickThumb}
-                disabled={uploading}
-              >
-                {uploading ? "Đang tải..." : "Chọn tệp"}
-              </button>
-
-              {/* ✅ sau upload hiển thị tên file; nếu chưa có thì hiển thị hint */}
-              {thumbnail ? (
-                <span className="file-name">
-                  {thumbName || thumbnail.split("/").pop() || thumbnail}
-                </span>
-              ) : (
-                <span className="hint">Chưa chọn hình</span>
-              )}
-
-              {/* ✅ ở màn Thêm cũng có nút Xem khi đã có thumbnail */}
               {thumbnail && (
                 <button
                   type="button"
-                  className="button linklike"
-                  onClick={openThumbPreview}
+                  className="btn"
+                  onClick={() => {
+                    const url = toFileUrl(thumbnail);
+                    if (url) {
+                      const w = window.open(
+                        "",
+                        "_blank",
+                        "noopener,noreferrer,width=900,height=700"
+                      );
+                      if (w)
+                        w.document.write(
+                          `<html><body style="margin:0"><img src="${url}" style="max-width:100%;max-height:100vh;display:block;margin:auto"/></body></html>`
+                        );
+                    }
+                  }}
                 >
-                  Xem hình
+                  Xem
                 </button>
               )}
             </div>
+            {thumbName && <div className="upload-name">{thumbName}</div>}
           </div>
         </div>
 
-        <div className="row col1">
-          <div className="fi">
-            <label>Nội dung</label>
-            <RichEditor
-              value={content}
-              onChange={setContent}
-              onUploadImage={onUploadImageInContent}
-            />
-          </div>
-        </div>
-      </div>
-
-      {confirmBack && (
-        <ConfirmModal
-          text="Bạn có muốn thoát không?"
-          onOk={onBack}
-          onCancel={() => setConfirmBack(false)}
-        />
-      )}
-      {thumbPreview && (
-        <ImageModal src={thumbPreview} onClose={() => setThumbPreview(null)} />
-      )}
-    </div>
-  );
-}
-
-/* ============== List Page ============== */
-type SortKey = "title" | "publish" | "created" | "updated";
-type SortDir = "asc" | "desc";
-
-export default function NewsManagement() {
-  // filters & paging
-  const [q, setQ] = React.useState("");
-  const [qDebounced, setQDebounced] = React.useState("");
-  const [page, setPage] = React.useState(1);
-  const LIMIT = 10;
-
-  // data
-  const [list, setList] = React.useState<NewsDto[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [totalPages, setTotalPages] = React.useState(1);
-
-  // ui
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [msg, setMsg] = React.useState<string | null>(null);
-
-  // sort
-  const [sortKey, setSortKey] = React.useState<SortKey>("updated");
-  const [sortDir, setSortDir] = React.useState<SortDir>("desc");
-
-  // editor routing state (trang riêng)
-  const [mode, setMode] = React.useState<null | "create" | "edit">(null);
-  const [editing, setEditing] = React.useState<NewsDto | null>(null);
-
-  // selection for batch publish
-  const [selected, setSelected] = React.useState<Record<string, boolean>>({});
-  const selectedIds = React.useMemo(
-    () => Object.keys(selected).filter((k) => selected[k]),
-    [selected]
-  );
-  const allChecked = React.useMemo(
-    () => list.length > 0 && list.every((r) => selected[r.id]),
-    [list, selected]
-  );
-
-  // debounce search
-  React.useEffect(() => {
-    const t = window.setTimeout(() => setQDebounced(q), 400);
-    return () => window.clearTimeout(t);
-  }, [q]);
-  React.useEffect(() => {
-    setPage(1);
-  }, [qDebounced]);
-
-  const fetchList = React.useCallback(
-    async (pageNum: number, keyword: string) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await listNews({
-          page: pageNum,
-          limit: LIMIT,
-          search: keyword,
-        });
-        const dt = res.data;
-        setList(dt.data);
-        setTotal(dt.total);
-        setTotalPages(Math.max(1, Math.ceil(dt.total / dt.limit)));
-      } catch (e: any) {
-        setError(e?.message || "Lỗi tải dữ liệu");
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
-  React.useEffect(() => {
-    fetchList(page, qDebounced);
-  }, [page, qDebounced, fetchList]);
-
-  const sorted = React.useMemo(() => {
-    const arr = [...list];
-    arr.sort((a, b) => {
-      let av: any = "",
-        bv: any = "";
-      switch (sortKey) {
-        case "title":
-          av = a.title || "";
-          bv = b.title || "";
-          break;
-        case "publish":
-          av = a.is_publish ? 1 : 0;
-          bv = b.is_publish ? 1 : 0;
-          break;
-        case "created":
-          av = a.created_at || "";
-          bv = b.created_at || "";
-          break;
-        case "updated":
-          av = a.updated_at || "";
-          bv = b.updated_at || "";
-          break;
-      }
-      const cmp =
-        sortKey === "publish"
-          ? (av as number) - (bv as number)
-          : String(av).localeCompare(String(bv));
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return arr;
-  }, [list, sortKey, sortDir]);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir("asc");
-    } else {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    }
-  };
-
-  // CRUD
-  const onCreate = async (payload: NewsCreateRequest) => {
-    await createNews(payload);
-    setMode(null);
-    setPage(1);
-    await fetchList(1, qDebounced);
-    setMsg("Thêm tin tức thành công.");
-  };
-  const onUpdate = async (id: string, payload: NewsUpdateRequest) => {
-    await updateNews(id, payload);
-    setMode(null);
-    setEditing(null);
-    await fetchList(page, qDebounced);
-    setMsg("Cập nhật tin tức thành công.");
-  };
-  const onDelete = async (id: string) => {
-    if (!confirm("Bạn chắc chắn muốn xóa tin tức này?")) return;
-    await deleteNews(id);
-    const newTotal = Math.max(0, total - 1);
-    const newTotalPages = Math.max(1, Math.ceil(newTotal / LIMIT));
-    const newPage = Math.min(page, newTotalPages);
-    setPage(newPage);
-    await fetchList(newPage, qDebounced);
-    setMsg("Xóa tin tức thành công.");
-  };
-
-  const setPublishForSelected = async (val: boolean) => {
-    if (selectedIds.length === 0) {
-      setMsg("Vui lòng chọn ít nhất một bản ghi.");
-      return;
-    }
-    try {
-      await Promise.allSettled(
-        selectedIds.map((id) =>
-          updateNews(id, {
-            title: list.find((x) => x.id === id)?.title || "",
-            content: list.find((x) => x.id === id)?.content || "",
-            thumbnail: list.find((x) => x.id === id)?.thumbnail || null,
-            is_publish: val,
-          })
-        )
-      );
-      setSelected({});
-      await fetchList(page, qDebounced);
-      setMsg(
-        val ? "Đã công bố bản ghi đã chọn." : "Đã hủy công bố bản ghi đã chọn."
-      );
-    } catch (e: any) {
-      setMsg(e?.message || "Có lỗi khi cập nhật.");
-    }
-  };
-
-  const toggleAll = (checked: boolean) => {
-    const next: Record<string, boolean> = {};
-    if (checked) list.forEach((r) => (next[r.id] = true));
-    setSelected(next);
-  };
-  const toggleOne = (id: string, checked: boolean) => {
-    setSelected((prev) => ({ ...prev, [id]: checked }));
-  };
-
-  const current = Math.min(page, totalPages);
-  const isNoData = total === 0;
-
-  /* ======= Render ======= */
-  if (mode === "create") {
-    return (
-      <div className="news-wrap">
-        <div className="ncard shadow-card">
-          <div className="page-head">
-            <div className="page-title">Thêm tin tức</div>
-          </div>
-          <NewsEditorPage
-            mode="create"
-            onSave={onCreate}
-            onBack={() => setMode(null)}
+        <div className="f-row">
+          <label>Mô tả (tùy chọn)</label>
+          <textarea
+            rows={3}
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            placeholder="Mô tả ngắn cho bài viết..."
           />
         </div>
-        {msg && <MessageModal message={msg} onClose={() => setMsg(null)} />}
-      </div>
-    );
-  }
-  if (mode === "edit" && editing) {
-    return (
-      <div className="news-wrap">
-        <div className="ncard shadow-card">
-          <div className="page-head">
-            <div className="page-title">Sửa tin tức</div>
-          </div>
-          <NewsEditorPage
-            mode="edit"
-            initial={editing}
-            onSave={(payload) => onUpdate(editing.id, payload)}
-            onBack={() => {
-              setMode(null);
-              setEditing(null);
+
+        <div className="f-row">
+          <label>Nội dung</label>
+          <Editor
+            onInit={(_evt: unknown, editor: any) =>
+              (editorRef.current = editor)
+            }
+            value={content}
+            onEditorChange={(val: string) => setContent(val)}
+            /* Không truyền apiKey để tránh overlay của Tiny Cloud */
+            init={{
+              height: 560,
+              menubar: false,
+              plugins: [
+                "advlist",
+                "autolink",
+                "lists",
+                "link",
+                "image",
+                "charmap",
+                "preview",
+                "anchor",
+                "searchreplace",
+                "visualblocks",
+                "code",
+                "fullscreen",
+                "insertdatetime",
+                "media",
+                "table",
+                "help",
+                "wordcount",
+                "quickbars",
+                "autoresize",
+              ],
+              toolbar:
+                "undo redo | blocks fontfamily fontsize | bold italic underline forecolor backcolor | " +
+                "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | " +
+                "table link image media | removeformat | code preview",
+              quickbars_selection_toolbar:
+                "bold italic | quicklink h2 h3 blockquote | bullist numlist",
+              image_caption: true,
+              object_resizing: "img",
+              images_file_types: "jpg,jpeg,png,gif,webp",
+              automatic_uploads: true,
+              images_upload_handler: async (
+                blobInfo: any,
+                _progress: (p: number) => void
+              ): Promise<string> => {
+                const file = blobInfo.blob();
+                const res = await uploadFile(file as any);
+                const url = toFileUrl(res.data.filename);
+                return url || "";
+              },
+              content_style:
+                "body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.6}" +
+                "img{max-width:100%;height:auto;}",
             }}
           />
         </div>
-        {msg && <MessageModal message={msg} onClose={() => setMsg(null)} />}
+
+        <div className="f-actions">
+          <button
+            className="btn"
+            onClick={() => {
+              if (window.confirm("Bạn có muốn thoát không?")) onBack();
+            }}
+          >
+            Hủy
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={handleSave}
+          >
+            {busy ? "Đang lưu..." : "Lưu"}
+          </button>
+        </div>
       </div>
-    );
-  }
-
-  // Danh sách
-  return (
-    <div className="news-wrap">
-      <div className="ncard shadow-card">
-        <div className="page-head">
-          <div className="page-title">Quản lý tin tức</div>
-          <div style={{ marginLeft: "auto", opacity: 0.9 }}>
-            Trang {totalPages ? current : 0}/{totalPages} • Tổng {total} bản ghi
-          </div>
-        </div>
-
-        {/* Toolbar */}
-        <div className="toolbar">
-          <div className="search-group">
-            <label htmlFor="searchNews" className="search-label">
-              Tìm kiếm
-            </label>
-            <input
-              id="searchNews"
-              className="search"
-              placeholder="Tìm theo tiêu đề…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-
-          <div className="batch" style={{ display: "flex", gap: 8 }}>
-            <button
-              className="button"
-              disabled={selectedIds.length === 0}
-              onClick={() => setPublishForSelected(true)}
-            >
-              Công bố
-            </button>
-            <button
-              className="button"
-              disabled={selectedIds.length === 0}
-              onClick={() => setPublishForSelected(false)}
-            >
-              Hủy Công bố
-            </button>
-          </div>
-
-          <div style={{ marginLeft: "auto" }}>
-            <button
-              className="button button--primary"
-              onClick={() => setMode("create")}
-            >
-              + Thêm tin tức
-            </button>
-          </div>
-        </div>
-
-        {error && <div className="search-empty-banner">{error}</div>}
-        {loading && <div className="count">Đang tải…</div>}
-
-        <div className="thead">Danh sách tin tức</div>
-
-        <div className="list" role="list">
-          {!isNoData && (
-            <div
-              className="news-tr tr--head"
-              role="presentation"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="th checkbox-cell">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  onChange={(e) => toggleAll(e.target.checked)}
-                />
-              </div>
-              <div className="th" onClick={() => toggleSort("title")}>
-                Tiêu đề
-                <span className={cx("sort-icons", sortKey === "title" && "on")}>
-                  <i>▲</i>
-                  <i>▼</i>
-                </span>
-              </div>
-              <div className="th" onClick={() => toggleSort("publish")}>
-                Công bố
-                <span
-                  className={cx("sort-icons", sortKey === "publish" && "on")}
-                >
-                  <i>▲</i>
-                  <i>▼</i>
-                </span>
-              </div>
-              <div className="th" onClick={() => toggleSort("created")}>
-                Ngày tạo
-                <span
-                  className={cx("sort-icons", sortKey === "created" && "on")}
-                >
-                  <i>▲</i>
-                  <i>▼</i>
-                </span>
-              </div>
-              <div className="th" onClick={() => toggleSort("updated")}>
-                Ngày thay đổi
-                <span
-                  className={cx("sort-icons", sortKey === "updated" && "on")}
-                >
-                  <i>▲</i>
-                  <i>▼</i>
-                </span>
-              </div>
-              <div style={{ textAlign: "right" }}>Thao tác</div>
-            </div>
-          )}
-
-          {sorted.map((r) => (
-            <div key={r.id} className="news-tr" role="listitem">
-              <div className="td checkbox-cell">
-                <input
-                  type="checkbox"
-                  checked={!!selected[r.id]}
-                  onChange={(e) => toggleOne(r.id, e.target.checked)}
-                />
-              </div>
-              <div className="td td--title">{r.title || "—"}</div>
-              <div className="td">{r.is_publish ? "Có" : "Không"}</div>
-              <div className="td">{r.created_at || "—"}</div>
-              <div className="td">{r.updated_at || "—"}</div>
-              <div
-                className="td td--actions"
-                style={{
-                  textAlign: "right",
-                  display: "flex",
-                  gap: 8,
-                  justifyContent: "flex-end",
-                }}
-              >
-                <button
-                  className="button"
-                  onClick={async () => {
-                    try {
-                      const detail = await getNews(r.id);
-                      setEditing(detail.data);
-                    } catch {
-                      setEditing(r);
-                    }
-                    setMode("edit");
-                  }}
-                >
-                  Sửa
-                </button>
-                <button
-                  className="button button--danger"
-                  onClick={() => onDelete(r.id)}
-                >
-                  Xóa
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {total > 0 && (
-          <div className="pagination">
-            <button
-              className="page-btn"
-              disabled={current <= 1}
-              onClick={() => setPage(1)}
-              title="Trang đầu"
-            >
-              «
-            </button>
-            <button
-              className="page-btn"
-              disabled={current <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              title="Trang trước"
-            >
-              ‹
-            </button>
-            {buildPageList(totalPages, current).map((p, i) =>
-              typeof p === "number" ? (
-                <button
-                  key={i}
-                  className={cx(
-                    "page-btn",
-                    p === current && "page-btn--active"
-                  )}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              ) : (
-                <span key={i} className="page-ellipsis">
-                  {p}
-                </span>
-              )
-            )}
-            <button
-              className="page-btn"
-              disabled={current >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              title="Trang sau"
-            >
-              ›
-            </button>
-            <button
-              className="page-btn"
-              disabled={current >= totalPages}
-              onClick={() => setPage(totalPages)}
-              title="Trang cuối"
-            >
-              »
-            </button>
-          </div>
-        )}
-      </div>
-
-      {msg && <MessageModal message={msg} onClose={() => setMsg(null)} />}
     </div>
   );
 }

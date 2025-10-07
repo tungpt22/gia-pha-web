@@ -415,6 +415,11 @@ export default function Home() {
               </div>
             </div>
           </div>
+          <div className="section-footer">
+            <button className="link-btn" onClick={() => go("/news")}>
+              Xem thêm
+            </button>
+          </div>
         </section>
 
         {/* ===== Albums (4 ô, cover + info) ===== */}

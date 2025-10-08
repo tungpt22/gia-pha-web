@@ -221,6 +221,17 @@ export default function Navbar() {
                   >
                     Thông tin
                   </NavLink>
+
+                  <NavLink
+                    className="dropdown-item"
+                    to="/change-password"
+                    onClick={() => {
+                      setOpenUser(false);
+                      setOpenMobile(false);
+                    }}
+                  >
+                    Đổi mật khẩu
+                  </NavLink>
                   <a className="dropdown-item" onClick={handleLogout}>
                     Đăng xuất
                   </a>

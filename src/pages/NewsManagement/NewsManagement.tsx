@@ -166,7 +166,7 @@ function ListView({
                 load();
               }}
             >
-              Công bố
+              Phát hành
             </button>
             <button
               className="btn"
@@ -176,7 +176,7 @@ function ListView({
                 load();
               }}
             >
-              Hủy Công bố
+              Hủy Phát hành
             </button>
             <button className="btn btn-primary" onClick={onCreate}>
               + Thêm tin tức
@@ -201,7 +201,7 @@ function ListView({
             />
           </div>
           <div className="nm-col nm-col--title">Tiêu đề</div>
-          <div className="nm-col nm-col--pub">Công bố</div>
+          <div className="nm-col nm-col--pub">Phát hành</div>
           <div className="nm-col nm-col--date">Ngày tạo</div>
           <div className="nm-col nm-col--date">Ngày thay đổi</div>
           <div className="nm-col nm-col--act">Thao tác</div>
@@ -389,7 +389,7 @@ function EditorPage({ mode, onBack }: { mode: Mode; onBack: () => void }) {
 
         <div className="f-row two">
           <div>
-            <label>Công bố</label>
+            <label>Phát hành</label>
             <select
               value={isPublish ? "1" : "0"}
               onChange={(e) => setIsPublish(e.target.value === "1")}
